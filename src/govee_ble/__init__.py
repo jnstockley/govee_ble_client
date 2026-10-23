@@ -19,6 +19,8 @@ from .profiles import (
     H7126Mode,
     H7126Notification,
     H7126Profile,
+    H5179Notification,
+    H5179Profile,
 )
 from .scanner import DeviceFilter, GoveeScanner
 
@@ -33,6 +35,8 @@ __all__ = [
     "H7126Mode",
     "H7126Notification",
     "H7126Profile",
+    "H5179Notification",
+    "H5179Profile",
     "build_command_packet",
     "build_packet",
     "build_query_packet",

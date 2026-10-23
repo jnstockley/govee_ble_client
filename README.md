@@ -7,9 +7,8 @@ Python applications and integrations such as Home Assistant.
 ## Current scope
 
 The package provides cross-platform BLE discovery, a protocol-neutral GATT
-connection, Govee-style framing helpers, and an initial H7126 profile for
-querying power state, turning the purifier on, setting purifier modes, and
-toggling the panel display. The H7126 profile exposes only operations observed
+connection, Govee-style framing helpers, and device profiles for the H7126 air
+purifier and H5179 thermo-hygrometer. Profiles expose only operations observed
 in the supplied hardware traces.
 
 There is no single Govee BLE command protocol that can safely be assumed for
@@ -172,6 +171,42 @@ if profile.matches(discovered_device):
 `handle_notification` should parse bytes with `profile.parse_notification()` and
 use `notification.power_state`, `notification.mode`, and
 `notification.display_state` when they are not `None`.
+
+## H5179 thermo-hygrometer
+
+The H5179 profile uses the captured `INTELLI_ROCKS_HW` GATT service and its
+`...2011` command/notification characteristic. It sends `AA 0A` for current
+temperature and humidity and `AA 08` for battery percentage. The captured
+measurement response stores temperature and humidity as little-endian
+hundredths; temperature is represented in Celsius. `H5179Notification`
+provides `temperature_c`, `temperature_f`, `humidity_percent`, and
+`battery_percent`.
+
+The profile uses the H5179-specific `AA 0A` and `AA 08` commands observed in
+the supplied trace rather than substituting the `AA 01` combined-measurement
+query documented for related thermometer models.
+
+The current-measurement response contains no device timestamp. The watcher
+reports when it received the latest BLE measurement, using the host's local
+clock. Related Govee thermometer protocol notes describe a separate historical
+data transfer with records marked by relative minute offsets. That could
+support estimated sample times, but the historical transfer was not present in
+the supplied H5179 trace and has not been verified against this device.
+
+To monitor an H5179 directly over BLE:
+
+```sh
+PYTHONPATH=src python examples/watch_h5179_ble.py
+```
+
+The watcher queries temperature/humidity every five seconds and battery every
+minute. It prints both Celsius and Fahrenheit conversions.
+
+The related [GoveeBTTempLogger protocol notes](https://github.com/wcbonner/GoveeBTTempLogger#2026-05-21-encryption-details)
+document the H5179 family’s command characteristic and battery query. The
+[H5075 protocol notes](https://github.com/Heckie75/govee-h5075-thermo-hygrometer/blob/main/API.md)
+show the measurement and battery response layouts for the related thermometer
+protocol family.
 
 To watch the latest power notification and app mode/display commands in an
 iPhone PacketLogger capture while Govee Home remains connected, run:

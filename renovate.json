@@ -10,9 +10,5 @@
   "baseBranchPatterns": [
     "dev"
   ],
-  "prConcurrentLimit": 0,
-  "lockFileMaintenance": {
-    "enabled": true,
-    "extends": ["schedule:monthly"]
-  }
+  "prConcurrentLimit": 0
 }

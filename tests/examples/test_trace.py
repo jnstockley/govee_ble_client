@@ -47,7 +47,7 @@ def test_ignores_unrelated_handles_opcodes_and_short_writes():
     [
         (build_packet(0xAA, 1, b"\x00"), "power", "off"),
         (build_packet(0xAA, 1, b"\x01"), "power", "on"),
-        (build_packet(0xAA, 0x19, bytes(4) + b"\x64"), "filter_life", "100%"),
+        (build_packet(0xAA, 0x19, bytes(5) + b"\x64"), "filter_life", "100%"),
         (build_packet(0xEE, 5, b"\x01\x02"), "mode", "Low (BLE notification)"),
         (build_packet(0xEE, 5, b"\x02"), "mode", "Custom (BLE notification)"),
         (build_packet(0xEE, 0x16, b"\x01"), "display", "on (BLE notification)"),

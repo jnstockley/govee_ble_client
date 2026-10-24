@@ -187,7 +187,7 @@ def test_purifier_human_output_includes_states_and_schedule(capsys):
         H7126Profile.parse_notification(build_packet(0xAA, 5, b"\x00\x01")),
         H7126Profile.parse_notification(build_packet(0xAA, 5, b"\x02" + CUSTOM)),
         H7126Profile.parse_notification(build_packet(0xEE, 0x16, b"\x00")),
-        H7126Profile.parse_notification(build_packet(0xAA, 0x19, bytes(4) + b"\x64")),
+        H7126Profile.parse_notification(build_packet(0xAA, 0x19, bytes(5) + b"\x64")),
     ]
     purifier._print_human_values(notifications)
     purifier._print_packets([n.raw for n in notifications], notifications)

@@ -85,7 +85,7 @@ async def main() -> None:
             "mode is read with AA 05 00/01 queries and updated from EE 05 "
             "notifications. Panel display is queried with AA 16 and updated "
             "from EE 16 notifications; filter life is decoded "
-            "from byte 6 of AA 19 replies (observed at 0% and 100%). Startup "
+            "from zero-based frame offset 7 (payload offset 5) of AA 19 replies (observed at 0% and 100%). Startup "
             "queries the current mode, panel display, filter life, and saved "
             "Custom schedule. The schedule is read regardless of the active "
             "mode. "

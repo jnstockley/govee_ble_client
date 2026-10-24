@@ -31,7 +31,7 @@ user use prefix `ee 05 01` to report Sleep (`01`), Low (`02`), or High (`03`),
 and `ee 05 02` to report Custom.
 Display and filter-life readback were established in later H7126 captures.
 
-A later app-startup trace shows an `AA 19` query and a response whose byte 6
+A later app-startup trace shows an `AA 19` query and a response whose zero-based frame offset 7 (payload offset 5)
 is the filter-life percentage. The captured response had `00` at 0%; the
 filter-reset trace had `64` (100%) at the same offset. The profile exposes
 `request_filter_life()` and decodes that byte. The reset button sends
@@ -70,7 +70,7 @@ The H7126 profile exposes `turn_on()`, `turn_off()`, `request_power_state()`,
 | Sleep, Low, High, Custom modes | `AA 05 00/01` reads the current mode; 1/2/3 map to Sleep/Low/High. `AA 05 02` reads three Custom mode/duration entries. The latest capture confirms Sleep/10 minutes, Low/70 minutes, and High/Continuous. `3A 05 02` updates are echoed by the device. | Mode and three-segment Custom schedule read/write implemented |
 | Panel indicator LEDs on/off | Confirmed by the user: “Display” means the H7126 panel indicator LEDs. The trace shows `33 16 00 ff ff ff ff` followed by zero padding and checksum `25`, and `33 16 01 ff ff ff ff` followed by zero padding and checksum `24`. Notifications `ee 16 00` and `ee 16 01` report off and on; the startup `AA 16` query returned a recognizable state. | Commands, notifications, and device-verified query implemented |
 | Power | `AA 01` reports state; `33 01 01` turns on and `33 01 00` turns off. Both commands are observed, and status replies confirm the result. | Read/write implemented |
-| Filter life percentage and reset | `AA 19` response byte 6 is 0 at 0% and `64` (100%) after reset. The reset-button capture shows write `33 17 01`, acknowledgement `33 17 00`, then 100% readback. | `request_filter_life()` and `reset_filter_life()` implemented |
+| Filter life percentage and reset | `AA 19` response zero-based frame offset 7 (payload offset 5) is 0 at 0% and `64` (100%) after reset. The reset-button capture shows write `33 17 01`, acknowledgement `33 17 00`, then 100% readback. | `request_filter_life()` and `reset_filter_life()` implemented |
 
 References: [H7126 manual](https://govee-oss-public.oss-us-east-1.aliyuncs.com/prod/permanent-directory/skuDescriptionFile/H7126.pdf), [H7126 mode/API report](https://github.com/wez/govee2mqtt/issues/369), [purifier display support](https://github.com/homebridge-plugins/homebridge-govee/wiki/Supported-Devices), [similar Govee BLE lights query codes](https://github.com/Jaano/govee_lights/blob/master/GOVEE_BLE.md). The two-stage `AA 05` mode query is now observed in an H7126 PacketLogger trace.
 
@@ -212,7 +212,7 @@ the two direct GATT reads once on startup; the H7126 has previously rejected
 both. The script prints power from `AA 01`, mode from `EE 05` or the observed
 `AA 05 00/01` queries, and the saved Custom schedule from an `AA 05 02` query
 regardless of the currently active mode,
-display from `EE 16` or the device-verified `AA 16` reply, and filter life from byte 6
+display from `EE 16` or the device-verified `AA 16` reply, and filter life from zero-based frame offset 7 (payload offset 5)
 of `AA 19` replies (confirmed at 0% and 100%).
 Other notification bytes are printed without interpretation.
 
@@ -250,3 +250,12 @@ appears only after an `off` status notification. Before sharing output, remove d
 identifiers/addresses and inspect raw values for unique tokens. Do not share
 an unfiltered Bluetooth snoop capture or Wi-Fi setup traffic, which may
 contain credentials.
+
+
+### H7126 filter-life offset correction (2026-10-24)
+
+Three consecutive live filter queries returned 100 at zero-based frame offset 7
+(payload offset 5), matching Govee Home's 100%. Frame offset 6 was zero. The
+previous parser incorrectly used offset 6 and displayed 0%. The parser and
+trace watcher now use offset 7; a regression fixture preserves the observed
+reply without device identifiers. No filter reset was sent during this check.

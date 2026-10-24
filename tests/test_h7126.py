@@ -99,7 +99,7 @@ def test_display_replies(prefix, enabled):
 @pytest.mark.parametrize("percent", [0, 34, 100])
 def test_filter_life_is_at_observed_offset(percent):
     reply = PROFILE.parse_notification(
-        build_packet(0xAA, 0x19, bytes((9, 8, 7, 6, percent)))
+        build_packet(0xAA, 0x19, bytes((9, 8, 7, 6, 0, percent)))
     )
     assert reply.filter_life_percent == percent
 
@@ -107,7 +107,7 @@ def test_filter_life_is_at_observed_offset(percent):
 def test_unknown_or_invalid_values_remain_uninterpreted():
     assert (
         PROFILE.parse_notification(
-            build_packet(0xAA, 0x19, b"\x00" * 4 + b"\x65")
+            build_packet(0xAA, 0x19, b"\x00" * 5 + b"\x65")
         ).filter_life_percent
         is None
     )
@@ -193,3 +193,14 @@ def test_custom_segment_preserves_unknown_duration(raw, words, minutes):
 def test_bad_or_unexpected_frames_are_rejected(raw):
     with pytest.raises(ValueError):
         PROFILE.parse_notification(raw)
+
+
+def test_filter_life_from_live_h7126_reply():
+    """The percentage follows a zero byte in the observed 100% reply."""
+    frame = bytes.fromhex("aa 19 00 00 00 06 00 64 00 00 00 00 00 00 00 00 00 00 00 d1")
+    assert PROFILE.parse_notification(frame).filter_life_percent == 100
+
+
+def test_short_filter_reply_does_not_decode_padding_as_percentage():
+    frame = bytes.fromhex("aa 19 00 00 00 06 64 d1")
+    assert PROFILE.parse_notification(frame).filter_life_percent is None

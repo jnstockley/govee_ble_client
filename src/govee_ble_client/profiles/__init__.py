@@ -1,4 +1,9 @@
-"""Verified device-specific protocol profiles."""
+"""Device-specific profiles backed by captures and supplied-device checks.
+
+Verification limits vary by operation and firmware; see docs/PROJECT_STATUS.md.
+H5179/H7126 are stateless profiles; H7102Client owns an encrypted notification
+session and merges state only when the app calls receive().
+"""
 
 from .h5179 import H5179Notification, H5179Profile
 from .h7102 import (

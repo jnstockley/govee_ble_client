@@ -91,8 +91,8 @@ async def main() -> None:
             answer = (
                 input(
                     "Send common-format 0xAA/0x01 power-status query? "
-                    "It reported off on this H7126 when off; other-state "
-                    "behavior is unverified [y/N]: "
+                    "Power readback is verified on the supplied H7126; "
+                    "firmware variants may differ [y/N]: "
                 )
                 .strip()
                 .casefold()
@@ -114,8 +114,8 @@ async def main() -> None:
             answer = (
                 input(
                     "Attempt common-format power ON (0x33/0x01/0x01)? "
-                    "This may start the purifier; H7126 command support is "
-                    "unverified [y/N]: "
+                    "This starts the purifier; verified on the supplied "
+                    "H7126, but firmware variants may differ [y/N]: "
                 )
                 .strip()
                 .casefold()

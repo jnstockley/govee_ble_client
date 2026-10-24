@@ -17,7 +17,7 @@ uv run pytest --cov=govee_ble_client --cov-branch --cov-report=term-missing
 
 Pytest's `testpaths` selects `tests/`, and `norecursedirs` excludes directories
 named `examples`. Example-script tests are retained in `tests/examples/` but
-are excluded from default pytest runs and JUnit reports. Library tests remain
+are excluded from default pytest runs and the default CI JUnit report. An explicit run can include them in its own report. Library tests remain
 in `tests/`. The configured Python paths make the source package importable
 without environment-variable setup. Async tests use `asyncio.run`, so no additional async pytest plugin is
 required.
@@ -51,8 +51,10 @@ generated investigation reports are not required.
 | --- | --- |
 | Discovery | Advertisement copying and name fallback; name/service/manufacturer/predicate filters; UUID case handling; RSSI ordering; scan timeout validation |
 | GATT transport | Connected/disconnected guards; argument forwarding; immutable write data; context cleanup; connection errors; replacement of stale clients |
+| Concurrent connections | Per-device serialization; independent-device progress; queued deadlines; fresh clients and device resolution; injected connectors; stale disconnect callbacks; cancelled setup and teardown |
 | Common framing | Recorded query/control frames; padding and XOR; payload bounds; malformed replies; unknown values |
 | V1 encryption | AES and RC4 known vectors; fresh RC4 tails; synthetic handshake; noise and timeout handling; public/session key decoding; cleanup and notification failures |
+| Encrypted session ownership | Close/link-loss wakeups; stale notification rejection; exclusive handshake and receiving; combined buffer overflow; overall setup deadline; cleanup error preservation; in-flight write shutdown |
 | H5179 | Temperature/humidity/battery queries; signed temperature and unit conversion; sensor bounds; missing and unknown replies; GATT validation |
 | H7126 | Every query and control method, including filter reset; mode family versus selected mode; display/power/filter replies; three-segment schedules; Continuous and invalid input |
 | H7102 | Every query and control method; modes and speeds 1–8 encoding; per-segment oscillation; Custom blocks; live oscillation versus acknowledgements; partial state updates; session and reconnect failures |
@@ -72,3 +74,21 @@ For stateful code, test timeouts, partial updates, and cleanup after failure.
 Offline tests verify encoding and software behavior. Speeds, modes, and
 firmware variants listed as unverified in [project status](PROJECT_STATUS.md)
 still need a deliberate hardware comparison before their status changes.
+
+The concurrent monitor has offline tests in `tests/examples/test_multi_device_example.py`.
+Run all example tests explicitly with
+`.venv/bin/python -m pytest tests/examples` because the default collection
+excludes that directory. If a moved virtual environment leaves the `pytest`
+executable with a stale interpreter path, invoke pytest through the current
+environment's Python (`.venv/bin/python -m pytest`).
+
+## Documentation Verification
+
+The [application guide](APP_INTEGRATION.md) defines read-only helpers that accept
+an already-discovered device. Keep snippets consistent with the public API and
+verify their response handling with synthetic notifications, including off/false
+values, unrelated frames, timeout, and cleanup. Compile Markdown Python blocks
+as a syntax check; do not execute hardware discovery or control examples during
+routine documentation checks. HA-specific recipes require the target integration
+environment for runtime verification. Protocol investigation notes preserve
+historical evidence and are not standalone app recipes.

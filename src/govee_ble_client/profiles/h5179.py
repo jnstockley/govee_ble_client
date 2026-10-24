@@ -1,4 +1,4 @@
-"""Observed BLE read operations for the Govee H5179 thermo-hygrometer."""
+"""H5179 measurement/battery queries and partial notification decoding."""
 
 from __future__ import annotations
 
@@ -14,7 +14,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class H5179Notification:
-    """Decoded H5179 readings; temperature is retained in Celsius."""
+    """One reply's readings; absent fields are ``None``, not cached values.
+
+    Temperature is Celsius with a derived Fahrenheit property; humidity and
+    battery are percentages. ``raw`` preserves the original frame. No device
+    timestamp is decoded; apps may record their own receipt time.
+    """
 
     raw: bytes
     temperature_c: float | None = None
@@ -30,7 +35,13 @@ class H5179Notification:
 
 
 class H5179Profile:
-    """Read current H5179 temperature, humidity, and battery over GATT."""
+    """Stateless H5179 measurement/battery query and parsing helpers.
+
+    Subscribe to ``io_uuid`` before issuing queries. Requests validate GATT
+    layout and return ``None`` after writing, not after receiving values.
+    Parse callbacks and merge only non-``None`` fields in your app. This
+    profile provides no settings controls, history, or stored timestamp.
+    """
 
     model = "H5179"
     service_uuid = "494e5445-4c4c-495f-524f-434b535f4857"
@@ -52,7 +63,12 @@ class H5179Profile:
 
     @staticmethod
     def parse_notification(data: bytes) -> H5179Notification:
-        """Parse captured ``AA 0A`` measurements and ``AA 08`` battery replies."""
+        """Decode ``AA 0A`` measurements or ``AA 08`` battery into a partial record.
+
+        Common prefix/checksum validation applies; invalid humidity/battery
+        ranges raise ``ValueError``. Valid unknown query codes preserve ``raw``
+        and leave decoded fields ``None``. No I/O or state retention occurs.
+        """
         common = parse_notification(data)
         if common.code == 0x0A and len(common.payload) >= 4:
             temperature_raw = int.from_bytes(common.payload[:2], "little", signed=True)

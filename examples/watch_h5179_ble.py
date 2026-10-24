@@ -2,6 +2,9 @@
 
 Run from the repository root with
 ``PYTHONPATH=src python examples/watch_h5179_ble.py``.
+This standalone diagnostic opens a real link and sends measurement/battery
+queries, not settings controls. Its timestamp is host receipt time, not device
+sample time. It is not an app availability/reconnect manager.
 """
 
 from __future__ import annotations

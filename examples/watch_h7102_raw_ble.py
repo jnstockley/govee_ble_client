@@ -2,6 +2,10 @@
 
 Run from the repository root with
 ``PYTHONPATH=src python examples/watch_h7102_raw_ble.py``.
+This standalone diagnostic opens a real link, performs the encryption handshake,
+and sends state queries. It prints plaintext application frames for local
+investigation; review output before sharing. For typed app state and lifecycle
+handling use H7102Client and docs/APP_INTEGRATION.md.
 """
 
 from __future__ import annotations

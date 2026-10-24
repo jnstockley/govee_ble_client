@@ -16,7 +16,11 @@ class DeviceFilter:
     """Optional advertisement filters. Empty filters return all nearby BLE devices.
 
     ``name_contains`` is only a convenience heuristic: device names are optional
-    and are not proof that a device is made by Govee.
+    and are not proof that a device is made by Govee. Configured conditions
+    combine with AND; ``service_uuids`` accepts any matching UUID (OR).
+    UUID and name comparison is case-insensitive. ``predicate`` is synchronous
+    and receives a copied discovery record. Filtering happens after scanning;
+    it does not configure radio scan filters or reduce the scan duration.
     """
 
     name_contains: str | None = None
@@ -46,15 +50,22 @@ class DeviceFilter:
 
 
 class GoveeScanner:
-    """Discover nearby BLE advertisements without connecting to devices."""
+    """Standalone advertisement discovery without GATT connections.
+
+    Frameworks that manage BLE discovery should supply their native devices
+    directly to ``GattConnection`` rather than starting a competing scanner.
+    """
 
     async def scan(
         self, *, timeout: float = 5.0, device_filter: DeviceFilter | None = None
     ) -> list[DiscoveredDevice]:
         """Return devices seen during ``timeout`` seconds.
 
-        The scan is passive with respect to GATT: it does not connect, pair, or
-        transmit device commands. The platform BLE stack controls scan details.
+        Return copied records sorted by signal strength, strongest first.
+        ``timeout`` must be finite positive seconds; backend errors propagate.
+        No GATT connection, pairing, or device command is performed. This is
+        not a promise of passive radio scan mode; Bleak and the platform
+        control scan details. Device names and UUIDs remain discovery hints.
         """
         if not isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout must be a finite positive number")

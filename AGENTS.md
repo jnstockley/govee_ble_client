@@ -2,27 +2,62 @@
 
 ## Project Structure & Module Organization
 
-This is an asynchronous Python BLE library using a `src/` layout. Public, reusable code lives in `src/govee_ble_client/`; shared discovery, GATT, framing, encryption, and exceptions are at the package root. Device-specific protocol profiles belong in `src/govee_ble_client/profiles/` (for example, `h7102.py`). Runnable inspection and verification tools live in `examples/`. PacketLogger captures may be kept at the repository root for protocol investigation; treat them as potentially identifying data.
+This async Python BLE library uses `src/`. Discovery,
+GATT transport, framing, encryption, and exceptions live in
+`src/govee_ble_client/`. Device-specific protocols belong in `profiles/`
+(for example, `h7102.py`). Library tests live in `tests/`; example tests are
+in `tests/examples/`. Runnable monitors and verification tools live in
+`examples/`. App documentation: `docs/APP_INTEGRATION.md` and `docs/API.md`.
 
 ## Build, Test, and Development Commands
 
-- `uv sync --all-groups` installs the project and development dependencies from `uv.lock`.
-- `uv build` builds source and wheel distributions.
-- `uv run pytest` runs the pytest suite. There is currently no `tests/` directory; add focused tests as protocol behavior becomes testable.
-- `PYTHONPATH=src python examples/watch_h7102_raw_ble.py` runs a local BLE monitor. Other `watch_*` and `verify_*` examples follow the same pattern. These may connect to or change a physical device; read each script’s prompts first.
+- `uv sync --locked --all-groups`: install locked dependencies.
+- `uv build`: build source and wheel distributions in `dist/`.
+- `uv run pytest`: run offline library tests.
+- `uv run pytest tests/examples`: run example tests explicitly; default collection excludes them.
+- `uv run pytest --cov=govee_ble_client --cov-branch`: enforce the 95% library coverage minimum, including branches.
+- `uv run ruff check`: lint Python; `uv run ruff format --check`: verify formatting.
+- `PYTHONPATH=src python examples/watch_multiple_ble.py`: monitor devices using state queries.
+
+If a moved virtual environment leaves a stale pytest launcher, use
+`.venv/bin/python -m pytest`.
 
 ## Coding Style & Naming Conventions
 
-Use four spaces, type annotations, descriptive docstrings, and `snake_case` for modules, functions, and variables. Use `PascalCase` for classes and `UPPER_SNAKE_CASE` for constants. Keep shared transport behavior in package modules and model-specific command interpretation in profiles. Preserve raw payload bytes when their meaning is uncertain, and label observed facts separately from assumptions. No formatter or linter is configured in `pyproject.toml`.
+Use four spaces, type annotations, docstrings, and `snake_case`
+for modules, functions, and variables. Use `PascalCase` for classes and
+`UPPER_SNAKE_CASE` for constants. Ruff is a development dependency;
+`pyproject.toml` defines no repository-specific Ruff settings. Separate shared
+transport from model-specific interpretation. Preserve
+uncertain payload bytes and distinguish observed behavior from assumptions.
+
+## Architecture & Integration
+
+Keep I/O asynchronous and coordinate operations per connection while allowing
+independent devices to progress concurrently. Preserve cancellation, bounded
+buffers, and cleanup guarantees. Never automatically replay uncertain writes.
+Support Home Assistant through external discovery and injected connection
+setup without requiring Home Assistant or starting competing scanners.
 
 ## Testing Guidelines
 
-Use pytest and name test modules `test_*.py`; organize tests to mirror `src/govee_ble_client/`. Cover packet framing, parsing, validation, and state updates with captured or constructed frames. Do not require live BLE hardware for routine tests. Before relying on a newly inferred command, verify it against a capture or device and record that evidence in its profile documentation.
+Use pytest and name modules `test_*.py`. The suite blocks real Bluetooth;
+use fake clients and synthetic peripherals. Cover exact frames, malformed
+input, state updates, timeouts, cancellation, and reconnect races. Prefer
+event-controlled concurrency tests over timing-sensitive assertions. Verify
+new commands against captures or hardware and document evidence before
+claiming support. See `docs/TESTING.md`.
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short imperative subjects such as `Support H7102 BLE govee device`. Follow that style and keep each change focused. Pull requests should explain the affected device/profile, summarize protocol evidence and remaining uncertainty, list validation commands, and call out any commands that change physical devices. Never commit credentials or unredacted captures containing personal identifiers.
+Use short imperative subjects, such as `Fix linting` or `Add pytest`. Keep
+changes focused. PRs should identify profiles, summarize behavior
+and protocol evidence, list validation commands, and explain remaining
+uncertainty and device-changing operations.
 
 ## Security & Device Safety
 
-BLE captures and device identifiers can contain personal data; inspect and redact them before sharing or committing. The legacy Govee encryption transport is compatibility code, not modern authenticated encryption. Keep secrets and sensitive packet contents out of logs, and clearly identify experimental writes that may affect a device.
+Treat captures and device identifiers as potentially identifying data. Redact
+before sharing; never commit credentials. Keep secrets
+and raw sensitive traffic out of logs. Legacy AES/RC4 is compatibility code,
+not modern authenticated encryption. Read hardware-tool prompts before allowing writes.

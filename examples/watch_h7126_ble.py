@@ -1,7 +1,10 @@
-"""Connect directly to an H7126 and poll its verified power-status query.
+"""Display H7126 power, mode, schedule, panel display, and filter-life observations.
 
 Run from the repository root with
 ``PYTHONPATH=src python examples/watch_h7126_ble.py``.
+This standalone diagnostic opens a real link and sends state queries, including
+ATT read probes that the supplied purifier rejected. It has no app-level
+availability/reconnect manager; use docs/APP_INTEGRATION.md for app ownership.
 """
 
 from __future__ import annotations
@@ -95,7 +98,10 @@ async def main() -> None:
                 "mode-category AA 05 00 (observed in H7126 app trace)",
                 PROFILE.request_mode_hint,
             ),
-            ("panel display AA 16 (experimental)", PROFILE.request_panel_display_state),
+            (
+                "panel display AA 16 (device-verified)",
+                PROFILE.request_panel_display_state,
+            ),
         )
         for label, request in startup_queries:
             print(f"Sending {label} query.")

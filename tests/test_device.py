@@ -51,9 +51,15 @@ def test_discovered_device_connection_options(fake_bleak_factory):
     assert isinstance(connection, GattConnection)
     factory.assert_called_once_with(found._ble_device, timeout=12)
     assert not connection.is_connected
-    for timeout in (0, -1):
+    for timeout in (0, -1, float("nan"), float("inf")):
         with pytest.raises(ValueError):
             found.connect(timeout=timeout)
+
+
+def test_manual_device_without_backend_cannot_connect():
+    record = DiscoveredDevice("synthetic", None, None)
+    with pytest.raises(ValueError, match="from discovery"):
+        record.connect()
 
 
 @pytest.mark.parametrize(

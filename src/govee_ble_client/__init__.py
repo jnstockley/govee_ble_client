@@ -5,6 +5,10 @@ protocols are intentionally supplied by protocol profiles; Govee products do
 not expose a single command protocol shared by every model.
 """
 
+import tomllib
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+
 from .device import DiscoveredDevice, GattConnection
 from .encryption import GoveeAesRc4V1
 from .profiles import (
@@ -58,4 +62,14 @@ __all__ = [
     "build_query_packet",
     "parse_notification",
 ]
-__version__ = "0.1.0"
+try:
+    __version__ = version("govee-ble-client")
+except PackageNotFoundError:
+    # Source-tree imports work before the distribution has been installed.
+    _project_file = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if _project_file.is_file():
+        with _project_file.open("rb") as _project_stream:
+            __version__ = tomllib.load(_project_stream)["project"]["version"]
+    else:
+        __version__ = "unknown"
+    del _project_file

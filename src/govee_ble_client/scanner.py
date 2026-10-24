@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from math import isfinite
 
 from bleak import BleakScanner
 
@@ -26,6 +27,7 @@ class DeviceFilter:
     )
 
     def matches(self, device: DiscoveredDevice) -> bool:
+        """Return whether an advertisement satisfies every configured filter."""
         if (
             self.name_contains
             and self.name_contains.casefold() not in (device.name or "").casefold()
@@ -54,8 +56,8 @@ class GoveeScanner:
         The scan is passive with respect to GATT: it does not connect, pair, or
         transmit device commands. The platform BLE stack controls scan details.
         """
-        if timeout <= 0:
-            raise ValueError("timeout must be greater than zero")
+        if not isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be a finite positive number")
 
         discovered = await BleakScanner.discover(timeout=timeout, return_adv=True)
         results: list[DiscoveredDevice] = []

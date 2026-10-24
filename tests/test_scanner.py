@@ -87,7 +87,7 @@ def test_scan_filters_sorts_and_forwards_timeout(monkeypatch, run_async):
     assert run_async(GoveeScanner().scan()) == []
 
 
-@pytest.mark.parametrize("timeout", [0, -1])
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
 def test_invalid_timeout_does_not_discover(monkeypatch, run_async, timeout):
     discover = AsyncMock()
     monkeypatch.setattr(scanner_module.BleakScanner, "discover", discover)

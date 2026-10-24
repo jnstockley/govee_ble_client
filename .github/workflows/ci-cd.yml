@@ -1,5 +1,5 @@
 ---
-name: Lint, Test, and Deploy
+name: Lint, Test, and Publish
 
 on:
   release:
@@ -15,6 +15,9 @@ on:
       - pyproject.toml
       - uv.lock
       - .github/workflows/**.yml
+
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -73,16 +76,41 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  pypi-publish:
-    if: github.event_name == 'release' || github.ref_name == 'main'
+  python-compatibility:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.15']
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Install dependencies
+        run: uv sync --frozen --python "${{ matrix.python-version }}"
+
+      - name: Run offline tests
+        run: uv run --python "${{ matrix.python-version }}" pytest
+
+  build-release:
+    if: github.event_name == 'release'
     needs:
       - lint
       - test
-    name: Publish to PyPI
+      - python-compatibility
+    name: Build release distributions
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      id-token: write
+      contents: read
     steps:
       - name: Step 1 -Check out the repo
         uses: actions/checkout@v7
@@ -98,46 +126,49 @@ jobs:
       - name: Step 4 - Install Packages
         run: uv sync --frozen
 
-      - name: Step 5 - Create version tag
-        if: github.event_name == 'release'
-        run: echo "VERSION=$(echo ${{ github.event.release.tag_name }} | sed 's/^v//')" >> "$GITHUB_ENV"
-
-      - name: Step 5 - Create testing version tag for main branch
-        if: github.ref_name == 'main'
-        run: echo "VERSION=$(date +'%Y%m%d%H%M%S').dev" >> "$GITHUB_ENV"
-
-      - name: Step 6 - Get repository description
-        id: get-repo-description
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const repo = await github.rest.repos.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo
-            });
-            return repo.data.description;
-          result-encoding: string
-
-      - name: Step 7 - Update version in pyproject.toml
+      - name: Verify release tag matches project version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          # Replace version in pyproject.toml with the release tag (without 'v' prefix if present)
-          VERSION=${{ env.VERSION }}
-          DESCRIPTION="${{ steps.get-repo-description.outputs.result }}"
-          REPO_URL="https://github.com/${{ github.repository }}"
-          REPO_GIT_URL="https://github.com/${{ github.repository }}.git"
-          ISSUES_URL="https://github.com/${{ github.repository }}/issues"
-          AUTHOR_NAME="${{ github.actor }}"
-          AUTHOR_EMAIL="${{ github.actor }}@users.noreply.github.com"
+          python - <<'PYCODE'
+          import os
+          import tomllib
+          from pathlib import Path
 
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
-          sed -i "s/^description = \".*\"/description = \"$DESCRIPTION\"/" pyproject.toml
-          sed -i "s|^Homepage = \".*\"|Homepage = \"$REPO_URL\"|" pyproject.toml
-          sed -i "s|^Repository = \".*\"|Repository = \"$REPO_GIT_URL\"|" pyproject.toml
-          sed -i "s|^Issues = \".*\"|Issues = \"$ISSUES_URL\"|" pyproject.toml
-          sed -i "s/{ name = \"[^\"]*\", email = \"[^\"]*\"/{ name = \"$AUTHOR_NAME\", email = \"$AUTHOR_EMAIL\"/" pyproject.toml
+          tag_version = os.environ["RELEASE_TAG"].removeprefix("v")
+          with Path("pyproject.toml").open("rb") as project_file:
+              project_version = tomllib.load(project_file)["project"]["version"]
+          if tag_version != project_version:
+              raise SystemExit(
+                  f"Release tag {tag_version!r} does not match "
+                  f"pyproject.toml version {project_version!r}"
+              )
+          PYCODE
 
-      - name: Step 8 - Build package
+      - name: Build package
         run: uv build
 
-      - name: Step 9 - Publish package distributions to PyPI
+      - name: Store release distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+
+  pypi-publish:
+    if: github.event_name == 'release'
+    needs: build-release
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download release distributions
+        uses: actions/download-artifact@v6
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

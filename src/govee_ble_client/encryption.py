@@ -87,6 +87,7 @@ class GoveeAesRc4V1:
             raise RuntimeError("encryption handshake has already been started")
 
         def on_notification(_sender: Any, data: bytearray) -> None:
+            """Copy callback data before Bleak can reuse its buffer."""
             self._raw_notifications.put_nowait(bytes(data))
 
         await self._connection.start_notify(self._notify_uuid, on_notification)

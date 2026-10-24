@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any, Self
 
 from bleak import BleakClient
@@ -28,12 +29,13 @@ class DiscoveredDevice:
     manufacturer_data: dict[int, bytes] = field(default_factory=dict)
     service_data: dict[str, bytes] = field(default_factory=dict)
     service_uuids: tuple[str, ...] = ()
-    _ble_device: BLEDevice = field(repr=False, compare=False, default=None)  # type: ignore[assignment]
+    _ble_device: BLEDevice | None = field(repr=False, compare=False, default=None)
 
     @classmethod
     def from_advertisement(
         cls, device: BLEDevice, advertisement: AdvertisementData
     ) -> DiscoveredDevice:
+        """Copy advertisement fields into a discovery record."""
         return cls(
             identifier=device.address,
             name=advertisement.local_name or device.name,
@@ -46,8 +48,10 @@ class DiscoveredDevice:
 
     def connect(self, *, timeout: float = 10.0) -> GattConnection:
         """Create a connection handle for ``async with`` or explicit connect."""
-        if timeout <= 0:
-            raise ValueError("timeout must be greater than zero")
+        if not isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be a finite positive number")
+        if self._ble_device is None:
+            raise ValueError("cannot connect without a BLE device from discovery")
         return GattConnection(self._ble_device, timeout=timeout)
 
 
@@ -66,6 +70,7 @@ class GattConnection:
 
     @property
     def is_connected(self) -> bool:
+        """Whether the underlying Bleak client currently has a GATT link."""
         return self._client.is_connected
 
     @property
@@ -75,10 +80,12 @@ class GattConnection:
         return self._client.services
 
     async def connect(self) -> Self:
+        """Connect to the discovered device and return this handle."""
         await self._client.connect()
         return self
 
     async def disconnect(self) -> None:
+        """Disconnect if a GATT link is active."""
         if self._client.is_connected:
             await self._client.disconnect()
 
@@ -89,6 +96,7 @@ class GattConnection:
         return await self.connect()
 
     async def read(self, characteristic: str | BleakGATTCharacteristic) -> bytes:
+        """Read a characteristic from the active GATT connection."""
         self._require_connected()
         return bytes(await self._client.read_gatt_char(characteristic))
 
@@ -108,10 +116,12 @@ class GattConnection:
     async def start_notify(
         self, characteristic: str | BleakGATTCharacteristic, callback: Any
     ) -> None:
+        """Subscribe to characteristic notifications with a Bleak callback."""
         self._require_connected()
         await self._client.start_notify(characteristic, callback)
 
     async def stop_notify(self, characteristic: str | BleakGATTCharacteristic) -> None:
+        """Stop notifications for a characteristic on the active link."""
         self._require_connected()
         await self._client.stop_notify(characteristic)
 

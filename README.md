@@ -8,8 +8,12 @@ Python applications and integrations such as Home Assistant.
 
 The package provides cross-platform BLE discovery, a protocol-neutral GATT
 connection, Govee-style framing helpers, and device profiles for the H7126 air
-purifier and H5179 thermo-hygrometer. Profiles expose only operations observed
-in the supplied hardware traces.
+purifier, H5179 thermo-hygrometer, and H7102 tower fan. Profiles expose
+model-specific operations backed by supplied hardware traces and user device
+checks.
+
+See [Project status and device development](docs/PROJECT_STATUS.md) for the
+current validation status, known gaps, and a workflow for adding profiles.
 
 There is no single Govee BLE command protocol that can safely be assumed for
 every product. A device may advertise no useful identity, use different GATT
@@ -207,6 +211,84 @@ document the H5179 family’s command characteristic and battery query. The
 [H5075 protocol notes](https://github.com/Heckie75/govee-h5075-thermo-hygrometer/blob/main/API.md)
 show the measurement and battery response layouts for the related thermometer
 protocol family.
+
+## H7102 tower fan
+
+The H7102 profile uses the Govee service `...1910`, notification
+characteristic `...2b10`, and command characteristic `...2b11`. It establishes
+the captured AES/RC4 V1 session and exposes power, mode, speed, display, and
+Custom settings readback. The selector-2 reply contains a 16-byte block with a
+leading marker and three speed/duration entries. The speed byte's `0x10` bit
+encodes per-segment oscillation: the capture showed `0x15` for speed 5 with
+oscillation on and `0x05` for speed 5 with it off. Durations use duplicated
+big-endian minute values and `FF FF FF FF` for Continuous.
+The observed work-mode codes are Normal `1`, Sleep `5`, Nature `6`, and Custom
+`2`; speed readback has matched app values 5 through 8.
+The display query has returned both on and off in user captures.
+
+`H7102Client` provides encrypted state queries and the captured power,
+work-mode, speed, panel-display, and oscillation commands. Custom schedules
+can be read as speeds, durations, and per-segment oscillation, and written
+with `set_custom_schedule()`.
+The standalone/global oscillation state is not reliably returned by the
+available queries. Speed writes use the captured
+`33 05 01 <speed>` layout, confirmed in the capture at speed 8; values 1–4
+still need verification. Mode writes for Sleep and Nature were captured;
+Normal uses its observed state code. Custom mode requires a settings block.
+
+Use the client inside the discovered device's connected GATT context. The
+example below requests a snapshot and shows one optional control call:
+
+```python
+from govee_ble import H7102Client, H7102WorkMode
+
+async with discovered_device.connect() as connection:
+    async with H7102Client(connection) as fan:
+        await fan.request_state()
+        for _ in range(6):
+            await fan.receive(timeout=2)
+        print(fan.state)
+
+        # Commands change the physical device; call only the intended action.
+        await fan.set_work_mode(H7102WorkMode.SLEEP)
+
+        # Custom segment speed, duration, and oscillation.
+        await fan.request_custom_schedule()
+        await fan.receive(timeout=2)
+        schedule = fan.state.custom_schedule
+        if schedule is not None:
+            await fan.set_custom_schedule(
+                ((5, 50, True), (7, 60, False), (3, None, False)),
+                marker=schedule.marker,
+            )
+```
+
+The raw watcher remains available for inspecting decrypted frames:
+
+```sh
+PYTHONPATH=src python examples/watch_h7102_raw_ble.py
+```
+
+To step through readback and command checks with per-step confirmation against
+Govee Home, run the verifier below. It powers the fan on before testing its
+mode and speed controls, then offers to restore the state it read at startup.
+Global oscillation still needs visual confirmation in Govee Home because its
+state has no reliable BLE readback.
+
+```sh
+PYTHONPATH=src python examples/verify_h7102_ble.py
+```
+
+The verifier logs plaintext application frames before encryption. It does not
+print session keys or encrypted GATT payloads.
+
+The frame encryption uses the `cryptography` package's AES and legacy ARC4
+primitives. This compatibility protocol uses a publicly recovered app key and
+an XOR checksum, which is not cryptographic authentication. A separate
+AES-GCM V2 scheme is not implemented here. See the
+[govee-ble-local protocol reference](https://github.com/Brady-Woods/govee-ble-local/blob/master/spec/docs/GOVEE_BLE_GATT_PROTOCOL.md)
+and the negative
+[H61F6 investigation](https://github.com/egold555/Govee-Reverse-Engineering/blob/master/Products/H61F6.md).
 
 To watch the latest power notification and app mode/display commands in an
 iPhone PacketLogger capture while Govee Home remains connected, run:

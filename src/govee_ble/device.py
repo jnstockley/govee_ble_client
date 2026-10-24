@@ -60,6 +60,8 @@ class GattConnection:
     """
 
     def __init__(self, device: BLEDevice, *, timeout: float = 10.0) -> None:
+        self._device = device
+        self._timeout = timeout
         self._client = BleakClient(device, timeout=timeout)
 
     @property
@@ -79,6 +81,12 @@ class GattConnection:
     async def disconnect(self) -> None:
         if self._client.is_connected:
             await self._client.disconnect()
+
+    async def reconnect(self) -> GattConnection:
+        """Replace the Bleak client and establish a fresh GATT connection."""
+        await self.disconnect()
+        self._client = BleakClient(self._device, timeout=self._timeout)
+        return await self.connect()
 
     async def read(self, characteristic: str | BleakGATTCharacteristic) -> bytes:
         self._require_connected()

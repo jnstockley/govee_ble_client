@@ -3,7 +3,7 @@
   "name": "Main Branch Protection",
   "target": "branch",
   "source_type": "Repository",
-  "source": "jnstockley/govee_ble",
+  "source": "jnstockley/govee_ble_client",
   "enforcement": "active",
   "conditions": {
     "ref_name": {

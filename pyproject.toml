@@ -1,5 +1,5 @@
 [project]
-name = "govee-ble"
+name = "govee-ble-client"
 version = "0.1.0"
 description = "Async Bluetooth Low Energy discovery and protocol primitives for Govee devices"
 readme = "README.md"
@@ -13,6 +13,11 @@ dependencies = [
     "cryptography>=43.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/jnstockley/govee_ble_client"
+Repository = "https://github.com/jnstockley/govee_ble_client.git"
+Issues = "https://github.com/jnstockley/govee_ble_client/issues"
+
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
@@ -20,8 +25,25 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["examples", ".*"]
+pythonpath = ["src", "."]
+addopts = "-ra"
+
+[tool.coverage.run]
+branch = true
+source = ["govee_ble_client"]
+omit = ["examples/*", "*/examples/*"]
+
+[tool.coverage.report]
+omit = ["examples/*", "*/examples/*"]
+show_missing = true
+fail_under = 95
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.2",
 ]

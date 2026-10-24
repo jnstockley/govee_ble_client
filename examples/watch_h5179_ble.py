@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING
 
 from bleak.exc import BleakError
 
-from govee_ble import DeviceFilter, GoveeScanner, H5179Notification, H5179Profile
+from govee_ble_client import DeviceFilter, GoveeScanner, H5179Notification, H5179Profile
 
 if TYPE_CHECKING:
-    from govee_ble.device import GattConnection
+    from govee_ble_client.device import GattConnection
 
 PROFILE = H5179Profile()
 MEASUREMENT_INTERVAL = 5.0

@@ -4,7 +4,7 @@ This library provides reusable asynchronous BLE discovery and GATT transport, sh
 
 ## Device Status
 
-“Manually verified” means a device or app comparison was reported during development. It does not imply support across all firmware revisions or hardware variants. A focused offline test suite now covers H7102 oscillation decoding and probe recovery; other device features still rely on captures and manual verification.
+“Manually verified” means a device or app comparison was reported during development. It does not imply support across all firmware revisions or hardware variants. Offline pytest tests cover every library module and all three profiles, including their queries, controls, parsing, validation, and state handling. Hardware verification remains a separate source of protocol evidence.
 
 ### H7126 Air Purifier
 
@@ -34,10 +34,10 @@ in [H7102 oscillation investigation](H7102_OSCILLATION.md).
 
 1. **Establish identity and GATT layout.** Record the advertised name as a discovery hint, then inspect the connected service and characteristic UUIDs and properties. A name or shared Govee UUID does not prove a model or protocol.
 2. **Capture controlled behavior.** Record a baseline, then change one app setting at a time. Save the action, direction, state before and after, raw bytes, and firmware details when available. For encrypted devices, document the handshake separately from application frames. Redact device identifiers and unrelated traffic before sharing captures.
-3. **Implement conservatively.** Add a model profile under `src/govee_ble/profiles/`. Validate frame lengths, checksums, fields, and ranges; preserve unknown payload bytes. Add queries only after observing replies. Add writes only after capturing the app command, and label remaining uncertainty in docstrings and this status file.
-4. **Expose and document the API.** Export public types from both `profiles/__init__.py` and `govee_ble/__init__.py`. Add a read-only watcher and, when state-changing controls exist, a confirmation-based verifier. Keep protocol logic independent of Home Assistant.
+3. **Implement conservatively.** Add a model profile under `src/govee_ble_client/profiles/`. Validate frame lengths, checksums, fields, and ranges; preserve unknown payload bytes. Add queries only after observing replies. Add writes only after capturing the app command, and label remaining uncertainty in docstrings and this status file.
+4. **Expose and document the API.** Export public types from both `profiles/__init__.py` and `govee_ble_client/__init__.py`. Add a read-only watcher and, when state-changing controls exist, a confirmation-based verifier. Keep protocol logic independent of Home Assistant.
 5. **Verify in two layers.** Add offline pytest cases for framing, parsing, invalid input, and state updates using constructed or redacted frames. Then run the device verifier and compare BLE readback with Govee Home. A sent write alone is not proof the device applied it.
 
 ## Development Commands and Test Coverage
 
-Run `uv sync --all-groups` to install the locked environment, `uv build` to build distributions, and `PYTHONPATH=src uv run pytest` to run the tests in `tests/`. The current suite covers observed H7102 oscillation replies, invalid frames, query construction, state updates, probe correlations, and recovery from a disconnect during a query. These offline tests do not establish hardware support for other devices or firmware. Run examples from the repository root with `PYTHONPATH=src`; for example, `PYTHONPATH=src python examples/verify_h7102_ble.py`. Verifiers can change physical device state and ask before each action.
+Run `uv sync --locked --all-groups` to install the environment, `uv build` to build distributions, and `uv run pytest` to run `tests/`. The suite blocks real BLE access, uses synthetic peripherals and packet fixtures, and tests all public profile commands without transmitting them. See [Offline testing](TESTING.md) for the coverage map and CI command. These checks validate code behavior; hardware captures and manual checks establish support for a particular device and firmware. Run hardware examples separately from the repository root with `PYTHONPATH=src`. Verifiers can change physical device state and ask before each action.

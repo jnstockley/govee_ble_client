@@ -14,14 +14,14 @@ from dataclasses import dataclass
 
 from bleak.exc import BleakError
 
-from govee_ble import (
+from govee_ble_client import (
     DeviceFilter,
     GoveeScanner,
     H7102Client,
     H7102Notification,
     H7102WorkMode,
 )
-from govee_ble.exceptions import GoveeBLEError
+from govee_ble_client.exceptions import GoveeBLEError
 
 RESPONSE_TIMEOUT = 5.0
 STATE_FIELDS = {"power", "mode", "speed", "custom", "display", "oscillation"}
@@ -559,7 +559,7 @@ def _encode_custom_settings(
         if not 1 <= speed <= 8:
             raise ValueError("speeds must be between 1 and 8")
         if not isinstance(oscillate, bool):
-            raise ValueError("oscillation values must be on or off")
+            raise TypeError("oscillation values must be on or off")
         settings.append(speed | (0x10 if oscillate else 0))
         if duration_minutes is None:
             if index != 2:

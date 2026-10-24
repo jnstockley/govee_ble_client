@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING, Any
 
 from bleak.exc import BleakError
 
-from govee_ble import DeviceFilter, GoveeScanner, H7102Profile, build_packet
-from govee_ble.encryption import GoveeAesRc4V1
-from govee_ble.exceptions import DeviceNotConnectedError, GoveeBLEError
+from govee_ble_client import DeviceFilter, GoveeScanner, H7102Profile, build_packet
+from govee_ble_client.encryption import GoveeAesRc4V1
+from govee_ble_client.exceptions import DeviceNotConnectedError, GoveeBLEError
 
 if TYPE_CHECKING:
-    from govee_ble.device import GattConnection
+    from govee_ble_client.device import GattConnection
 
 PROFILE = H7102Profile()
 APP_PREFIXES = (0xAA, 0xEE, 0x33, 0x3A)

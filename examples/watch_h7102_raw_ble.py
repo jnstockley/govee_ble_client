@@ -11,14 +11,14 @@ import time
 
 from bleak.exc import BleakError
 
-from govee_ble import (
+from govee_ble_client import (
     DeviceFilter,
     GoveeScanner,
     H7102CustomSegment,
     H7102Profile,
 )
-from govee_ble.encryption import GoveeAesRc4V1
-from govee_ble.protocol import build_packet
+from govee_ble_client.encryption import GoveeAesRc4V1
+from govee_ble_client.protocol import build_packet
 
 PROFILE = H7102Profile()
 

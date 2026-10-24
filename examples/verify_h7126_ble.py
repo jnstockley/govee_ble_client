@@ -11,11 +11,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 from bleak.exc import BleakError
 
-from govee_ble import (
+from govee_ble_client import (
     DeviceFilter,
     GoveeScanner,
     H7126CustomSchedule,
@@ -23,8 +23,8 @@ from govee_ble import (
     H7126Notification,
     H7126Profile,
 )
-from govee_ble.device import DiscoveredDevice, GattConnection
-from govee_ble.exceptions import GoveeBLEError
+from govee_ble_client.device import DiscoveredDevice, GattConnection
+from govee_ble_client.exceptions import GoveeBLEError
 
 PROFILE = H7126Profile()
 RESPONSE_WAIT = 0.8
@@ -53,7 +53,7 @@ class RecordingConnection:
     def is_connected(self) -> bool:
         return self._connection is not None and self._connection.is_connected
 
-    async def __aenter__(self) -> RecordingConnection:
+    async def __aenter__(self) -> Self:
         await self._connect()
         return self
 

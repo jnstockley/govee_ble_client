@@ -11,7 +11,7 @@ import time
 
 from bleak.exc import BleakError
 
-from govee_ble import (
+from govee_ble_client import (
     DeviceFilter,
     GoveeScanner,
     H7126CustomSchedule,

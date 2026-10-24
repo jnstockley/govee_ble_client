@@ -1,4 +1,4 @@
-# govee-ble
+# govee-ble-client
 
 An asynchronous Python library for discovering and communicating with Govee
 devices over Bluetooth Low Energy (BLE). It is intended to be usable by regular
@@ -22,12 +22,23 @@ The library therefore keeps transport separate from protocol profiles. A
 profile should be added only with captured or otherwise verified behavior for
 the models and firmware it claims to support.
 
+Source code and issue tracking: [jnstockley/govee_ble_client](https://github.com/jnstockley/govee_ble_client).
+
+## Installation
+
+```sh
+pip install govee-ble-client
+```
+
+The PyPI distribution is `govee-ble-client`; the Python import is
+`govee_ble_client`.
+
 ## Quick start
 
 ```python
 import asyncio
 
-from govee_ble import DeviceFilter, GoveeScanner
+from govee_ble_client import DeviceFilter, GoveeScanner
 
 
 async def main() -> None:
@@ -154,7 +165,7 @@ profile. Do not share the full capture; it can contain unrelated device data.
 The profile API is available directly to applications:
 
 ```python
-from govee_ble import H7126Profile
+from govee_ble_client import H7126Profile
 
 profile = H7126Profile()
 if profile.matches(discovered_device):
@@ -248,7 +259,7 @@ Use the client inside the discovered device's connected GATT context. The
 example below requests a snapshot and shows one optional control call:
 
 ```python
-from govee_ble import H7102Client, H7102Profile, H7102WorkMode
+from govee_ble_client import H7102Client, H7102Profile, H7102WorkMode
 
 async with discovered_device.connect() as connection:
     async with H7102Client(connection) as fan:
@@ -364,9 +375,16 @@ contain credentials.
 
 ## Development
 
-Install with `uv sync --all-groups`, then `uv run python -m compileall src`.
-BLE access requires a compatible adapter and platform permissions. CI and unit
-tests should mock the Bleak boundary so they do not require physical devices.
+Install with `uv sync --locked --all-groups`, then run `uv run pytest`.
+The pytest suite is entirely offline: real BLE discovery and client entry
+points are blocked before collection and during tests. All command writes go
+to in-memory fakes.
+
+Run `uv run pytest --cov=govee_ble_client --cov-branch` for coverage, with a 95%
+minimum required by the coverage configuration. See [Offline testing](docs/TESTING.md)
+for scope, CI commands, and how to add tests. Interactive `examples/watch_*`,
+`verify_*`, and `inspect_*` tools require explicit manual execution for hardware
+verification.
 
 ## License
 

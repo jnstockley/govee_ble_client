@@ -12,7 +12,7 @@ import asyncio
 
 from bleak.exc import BleakError
 
-from govee_ble import GoveeScanner, H7126Profile
+from govee_ble_client import GoveeScanner, H7126Profile
 
 PROFILE = H7126Profile()
 NOTIFY_UUID = PROFILE.notify_uuid
@@ -151,7 +151,7 @@ async def main() -> None:
                     state = "on" if notification.power_state else "off"
                     print(
                         f"  Common-format power state: {state}; "
-                        f"remaining payload={notification.payload[1:].hex()}"
+                        f"remaining payload={notification.raw[3:-1].hex()}"
                     )
 
 

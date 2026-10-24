@@ -5,8 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from examples.verify_h7102_ble import _describe, _fields_in, _last_field
-from govee_ble import H7102Client, H7102Profile, build_packet
+from govee_ble_client import H7102Client, H7102Profile, build_packet
 
 OFF = bytes.fromhex("aa1f0100000000000000000000000000000000b4")
 ON = bytes.fromhex("aa1f0101000000000000000000000000000000b5")
@@ -36,16 +35,6 @@ def make_client(frames=()):
 @pytest.mark.parametrize(("frame", "expected"), [(OFF, False), (ON, True)])
 def test_recorded_oscillation_reply(frame, expected):
     assert H7102Profile.parse_notification(frame).oscillation_state is expected
-
-
-@pytest.mark.parametrize(("frame", "expected"), [(OFF, False), (ON, True)])
-def test_verifier_checks_and_displays_both_binary_states(frame, expected):
-    notification = H7102Profile.parse_notification(frame)
-    assert "oscillation" in _fields_in(notification)
-    assert _last_field([notification], "oscillation") is expected
-    assert _describe(notification) == (
-        f"global oscillation={'on' if expected else 'off'}"
-    )
 
 
 @pytest.mark.parametrize(

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is an asynchronous Python BLE library using a `src/` layout. Public, reusable code lives in `src/govee_ble/`; shared discovery, GATT, framing, encryption, and exceptions are at the package root. Device-specific protocol profiles belong in `src/govee_ble/profiles/` (for example, `h7102.py`). Runnable inspection and verification tools live in `examples/`. PacketLogger captures may be kept at the repository root for protocol investigation; treat them as potentially identifying data.
+This is an asynchronous Python BLE library using a `src/` layout. Public, reusable code lives in `src/govee_ble_client/`; shared discovery, GATT, framing, encryption, and exceptions are at the package root. Device-specific protocol profiles belong in `src/govee_ble_client/profiles/` (for example, `h7102.py`). Runnable inspection and verification tools live in `examples/`. PacketLogger captures may be kept at the repository root for protocol investigation; treat them as potentially identifying data.
 
 ## Build, Test, and Development Commands
 
@@ -17,7 +17,7 @@ Use four spaces, type annotations, descriptive docstrings, and `snake_case` for 
 
 ## Testing Guidelines
 
-Use pytest and name test modules `test_*.py`; organize tests to mirror `src/govee_ble/`. Cover packet framing, parsing, validation, and state updates with captured or constructed frames. Do not require live BLE hardware for routine tests. Before relying on a newly inferred command, verify it against a capture or device and record that evidence in its profile documentation.
+Use pytest and name test modules `test_*.py`; organize tests to mirror `src/govee_ble_client/`. Cover packet framing, parsing, validation, and state updates with captured or constructed frames. Do not require live BLE hardware for routine tests. Before relying on a newly inferred command, verify it against a capture or device and record that evidence in its profile documentation.
 
 ## Commit & Pull Request Guidelines
 

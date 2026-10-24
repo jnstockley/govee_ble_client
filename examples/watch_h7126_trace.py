@@ -91,7 +91,16 @@ def _update_from_notification(value: bytes, state: ObservedState) -> None:
         state.filter_life = f"{value[6]}%"
         state.last_event = "filter-life value received"
     elif len(value) >= 4 and value[:2] == b"\xaa\x05":
-        mode = {b"\x00\x01": "High", b"\x00\x02": "Custom"}.get(value[2:4])
+        if value[2] == 0x02:
+            # Selector 2 reports saved Custom settings, not the active mode.
+            return
+        mode = {
+            b"\x00\x01": "Sleep/Low/High (exact fan mode not included)",
+            b"\x00\x02": "Custom",
+            b"\x01\x01": "Sleep",
+            b"\x01\x02": "Low",
+            b"\x01\x03": "High",
+        }.get(value[2:4])
         state.mode = mode or f"unknown (AA 05 {value[2:4].hex()})"
         state.last_event = "mode query notification received"
     elif len(value) == 20 and value[:2] == b"\xee\x05":

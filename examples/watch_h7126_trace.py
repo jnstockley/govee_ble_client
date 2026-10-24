@@ -87,8 +87,8 @@ def _update_from_notification(value: bytes, state: ObservedState) -> None:
     if len(value) >= 3 and value[:2] == b"\xaa\x01" and value[2] in (0, 1):
         state.power = "on" if value[2] else "off"
         state.last_event = "power-state notification received"
-    elif len(value) >= 7 and value[:2] == b"\xaa\x19" and value[6] <= 100:
-        state.filter_life = f"{value[6]}%"
+    elif len(value) >= 9 and value[:2] == b"\xaa\x19" and value[7] <= 100:
+        state.filter_life = f"{value[7]}%"
         state.last_event = "filter-life value received"
     elif len(value) >= 4 and value[:2] == b"\xaa\x05":
         if value[2] == 0x02:

@@ -124,8 +124,8 @@ class H7126Profile:
     async def request_filter_life(self, connection: GattConnection) -> None:
         """Request filter life using the app-observed H7126 ``AA 19`` query.
 
-        The percentage is response byte 6 (payload byte 4), observed at both
-        0% and 100% on the H7126.
+        The percentage is at zero-based frame offset 7 (payload offset 5),
+        observed at both 0% and 100% on the H7126.
         """
         self._validate_layout(connection)
         await connection.write(self.write_uuid, build_query_packet(0x19))
@@ -312,10 +312,10 @@ class H7126Profile:
             display_state = None
             if (
                 common.code == 0x19
-                and len(common.payload) >= 5
-                and common.payload[4] <= 100
+                and len(common.payload) >= 6
+                and common.payload[5] <= 100
             ):
-                filter_life = common.payload[4]
+                filter_life = common.payload[5]
             elif common.code == 0x05:
                 mode_query_response = True
                 if common.payload[:2] == b"\x00\x02":

@@ -309,3 +309,68 @@ def test_non_mode_frame_has_no_selector_data_or_custom_schedule():
     assert reply.custom_schedule is None
     truncated = H7102Notification(b"", 0xAA, 5, b"\x02")
     assert truncated.custom_schedule is None
+
+
+def test_concurrent_client_connects_share_one_handshake(client_factory, run_async):
+    import asyncio
+
+    async def check():
+        client, _, transport, _ = client_factory()
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def setup(**_options):
+            calls.append(True)
+            entered.set()
+            await release.wait()
+
+        transport.connect.side_effect = setup
+        first = asyncio.create_task(client.connect())
+        await entered.wait()
+        second = asyncio.create_task(client.connect())
+        await asyncio.sleep(0)
+        try:
+            assert calls == [True]
+        finally:
+            release.set()
+            await asyncio.gather(first, second)
+        assert calls == [True]
+        await client.close()
+
+    run_async(check())
+
+
+def test_handshake_cleanup_failure_preserves_original_error(client_factory, run_async):
+    client, _, transport, _ = client_factory()
+    transport.connect.side_effect = TimeoutError("original handshake failure")
+    transport.close.side_effect = RuntimeError("cleanup failure")
+    with pytest.raises(TimeoutError, match="original"):
+        run_async(client.connect())
+
+
+def test_old_receive_cannot_update_replacement_session_state(
+    client_factory, monkeypatch, run_async
+):
+    import asyncio
+
+    async def check():
+        client, _, transport, _ = client_factory()
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def receive(**_options):
+            entered.set()
+            await release.wait()
+            return build_packet(0xAA, 1, b"\x01")
+
+        transport.receive.side_effect = receive
+        new = SimpleNamespace(connect=AsyncMock(), close=AsyncMock(), established=True)
+        monkeypatch.setattr(module, "GoveeAesRc4V1", lambda *_a, **_kw: new)
+        receiving = asyncio.create_task(client.receive())
+        await entered.wait()
+        await client.reconnect()
+        release.set()
+        with pytest.raises(RuntimeError, match="session"):
+            await receiving
+        assert client.state.power_state is None
+
+    run_async(check())

@@ -8,8 +8,11 @@ application key is public, RC4 is obsolete, and packet integrity is only XOR.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from collections import deque
+from collections.abc import Callable
+from math import isfinite
 from typing import TYPE_CHECKING, Any
 
 from cryptography.hazmat.decrepit.ciphers.algorithms import ARC4
@@ -17,6 +20,10 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 if TYPE_CHECKING:
     from .device import GattConnection
+
+from .exceptions import DeviceNotConnectedError, NotificationBufferOverflowError
+
+_LOGGER = logging.getLogger(__name__)
 
 FRAME_LENGTH = 20
 _GOVEE_V1_PUBLIC_KEY = b"MakingLifeSmarte"
@@ -57,7 +64,16 @@ def _crypt_frame(frame: bytes, key: bytes, *, decrypt: bool) -> bytes:
 
 
 class GoveeAesRc4V1:
-    """Cipher state and GATT transport for Govee's V1 encrypted protocol."""
+    """Raw V1 encrypted frames over a caller-owned, connected GATT handle.
+
+    Prefer ``H7102Client`` for typed fan operations. This transport owns its
+    notification subscription and key material, not the GATT link. The positive
+    integer ``notification_buffer_size`` (default 256) bounds combined raw
+    notifications and frames retained during setup. Overflow fails the session
+    with ``NotificationBufferOverflowError`` instead of silently dropping data.
+    Run one receiver after setup and explicitly ``close()`` before releasing
+    GATT; the transport itself is not an async context manager.
+    """
 
     def __init__(
         self,
@@ -65,113 +81,248 @@ class GoveeAesRc4V1:
         *,
         write_uuid: str,
         notify_uuid: str,
+        notification_buffer_size: int = 256,
     ) -> None:
+        if (
+            isinstance(notification_buffer_size, bool)
+            or not isinstance(notification_buffer_size, int)
+            or notification_buffer_size <= 0
+        ):
+            raise ValueError("notification_buffer_size must be a positive integer")
         self._connection = connection
         self._write_uuid = write_uuid
         self._notify_uuid = notify_uuid
+        self._capacity = notification_buffer_size
         self._session_key: bytes | None = None
-        self._raw_notifications: asyncio.Queue[bytes] = asyncio.Queue()
+        self._raw_notifications: asyncio.Queue[bytes] = asyncio.Queue(
+            maxsize=notification_buffer_size
+        )
         self._pending: deque[bytes] = deque()
+        self._available = asyncio.Event()
         self._notifications_started = False
+        self._cleanup_pending = False
+        self._connecting = False
+        self._receiving = False
+        self._lifecycle = asyncio.Lock()
+        self._generation: object | None = None
+        self._epoch = 0
+        self._failure: Exception | None = None
+        self._unsubscribe: Callable[[], None] | None = None
 
     @property
     def established(self) -> bool:
-        """Whether the device accepted the V1 session-key handshake."""
-        return self._session_key is not None
-
-    async def connect(self, *, timeout: float = 5.0) -> None:
-        """Subscribe and perform the observed E7/01 + E7/02 handshake."""
-        if timeout <= 0:
-            raise ValueError("timeout must be greater than zero")
-        if self._notifications_started:
-            raise RuntimeError("encryption handshake has already been started")
-
-        def on_notification(_sender: Any, data: bytearray) -> None:
-            """Copy callback data before Bleak can reuse its buffer."""
-            self._raw_notifications.put_nowait(bytes(data))
-
-        await self._connection.start_notify(self._notify_uuid, on_notification)
-        self._notifications_started = True
-
-        request = build_encryption_handshake_frame(0x01)
-        await self._write_with_public_key(request)
-        response = await self._wait_for_handshake(0x01, timeout=timeout)
-        session_key = response[2:18]
-
-        confirmation = build_encryption_handshake_frame(0x02)
-        await self._write_with_public_key(confirmation)
-        await self._wait_for_handshake(0x02, timeout=timeout)
-        self._session_key = session_key
-
-    async def write(self, frame: bytes) -> None:
-        """Encrypt and send one session frame to the device."""
-        key = self._session_key
-        if key is None:
-            raise RuntimeError("V1 encryption handshake has not completed")
-        if len(frame) != FRAME_LENGTH or xor_checksum(frame) != 0:
-            raise ValueError("frame must be a valid 20-byte XOR-checksummed packet")
-        await self._connection.write(
-            self._write_uuid, _crypt_frame(frame, key, decrypt=False), response=False
+        """Whether a key belongs to an active, healthy GATT session."""
+        return (
+            self._session_key is not None
+            and self._failure is None
+            and self._connection.is_connected
         )
 
+    def _fail(self, error: Exception) -> None:
+        self._failure = error
+        self._session_key = None
+        self._generation = None
+        self._epoch += 1
+        self._pending.clear()
+        while not self._raw_notifications.empty():
+            self._raw_notifications.get_nowait()
+        self._available.set()
+
+    async def connect(self, *, timeout: float = 5.0) -> None:
+        """Subscribe and complete both handshake stages within one deadline.
+
+        ``timeout`` is finite positive seconds, starting after lifecycle
+        ownership is acquired. It covers subscription, writes, and both replies.
+        Cleanup has a separate five-second stop-notify budget. Failed/cancelled
+        setup invalidates key material and attempts to unsubscribe. If cleanup
+        also fails, the initiating error is preserved; retry ``close()`` before
+        reuse. Repeated or concurrent setup raises ``RuntimeError``.
+        """
+        if not isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be a finite positive number")
+        if self._connecting or self._notifications_started or self._cleanup_pending:
+            raise RuntimeError("encryption handshake has already been started")
+        self._connecting = True
+        try:
+            async with self._lifecycle:
+                self._failure = None
+                self._epoch += 1
+                epoch = self._epoch
+                generation = self._generation = object()
+                self._available.clear()
+
+                def on_notification(_sender: Any, data: bytearray) -> None:
+                    if self._generation is not generation or self._failure is not None:
+                        return
+                    if (
+                        self._raw_notifications.qsize() + len(self._pending)
+                        >= self._capacity
+                    ):
+                        self._fail(
+                            NotificationBufferOverflowError(
+                                "notification buffer overflow; reconnect required"
+                            )
+                        )
+                        return
+                    self._raw_notifications.put_nowait(bytes(data))
+                    self._available.set()
+
+                subscribe = getattr(self._connection, "add_disconnect_callback", None)
+                if subscribe is not None:
+                    self._unsubscribe = subscribe(
+                        lambda: self._fail(
+                            DeviceNotConnectedError("GATT link disconnected")
+                        )
+                    )
+                try:
+                    async with asyncio.timeout(timeout):
+                        # Set before awaiting: cancellation can occur after the
+                        # backend installed a subscription but before returning.
+                        self._notifications_started = True
+                        self._cleanup_pending = True
+                        await self._connection.start_notify(
+                            self._notify_uuid, on_notification
+                        )
+                        self._check_session(epoch)
+                        await self._write_with_public_key(
+                            build_encryption_handshake_frame(0x01)
+                        )
+                        response = await self._wait_for_handshake(0x01, timeout=timeout)
+                        session_key = response[2:18]
+                        await self._write_with_public_key(
+                            build_encryption_handshake_frame(0x02)
+                        )
+                        await self._wait_for_handshake(0x02, timeout=timeout)
+                        self._check_session(epoch)
+                        self._session_key = session_key
+                except BaseException:
+                    try:
+                        await self._close_locked()
+                    except Exception:  # noqa: BLE001 - preserve errors without logging payloads
+                        _LOGGER.debug("Handshake cleanup failed")
+                    raise
+        finally:
+            self._connecting = False
+
+    async def write(self, frame: bytes) -> None:
+        """Encrypt a valid 20-byte XOR-checksummed plaintext frame and write once.
+
+        A healthy established session is required. Return ``None`` after the
+        GATT write; no reply or state confirmation is awaited. Delivery may be
+        uncertain on cancellation, and application writes are never replayed.
+        """
+        epoch = self._epoch
+        async with self._lifecycle:
+            key = self._session_key
+            if not self.established or key is None:
+                raise RuntimeError("V1 encryption handshake has not completed")
+            self._check_session(epoch)
+            if len(frame) != FRAME_LENGTH or xor_checksum(frame) != 0:
+                raise ValueError("frame must be a valid 20-byte XOR-checksummed packet")
+            await self._connection.write(
+                self._write_uuid,
+                _crypt_frame(frame, key, decrypt=False),
+                response=False,
+            )
+
+    def _check_session(self, epoch: int) -> None:
+        if self._failure is not None:
+            raise self._failure
+        if epoch != self._epoch:
+            raise RuntimeError("encrypted session closed or replaced")
+
+    async def _next_raw(self, epoch: int) -> bytes:
+        while True:
+            self._check_session(epoch)
+            if not self._raw_notifications.empty():
+                return self._raw_notifications.get_nowait()
+            self._available.clear()
+            await self._available.wait()
+
     async def receive(self, *, timeout: float | None = None) -> bytes:
-        """Return the next valid decrypted frame, trying session and handshake keys."""
-        if self._pending:
-            return self._pending.popleft()
+        """Return the next decrypted frame; do not receive during setup.
+
+        Use exactly one consumer. ``timeout=None`` waits without a deadline;
+        otherwise supply finite positive seconds. ``TimeoutError`` alone does
+        not close the session. Malformed frames raise ``ValueError``. Close,
+        link loss, and overflow wake waiters with a lifecycle/connection/buffer
+        error. Closing or replacing a session prevents old buffered data from
+        entering the new one. No model-specific state is decoded here.
+        """
+        if self._connecting:
+            raise RuntimeError("encryption handshake is in progress")
+        if self._receiving:
+            raise RuntimeError("another receiver owns this notification stream")
+        self._check_session(self._epoch)
         if not self._notifications_started:
             raise RuntimeError("notifications have not been started")
-
-        raw = await asyncio.wait_for(self._raw_notifications.get(), timeout=timeout)
-        if len(raw) != FRAME_LENGTH:
-            raise ValueError("notification is not a 20-byte Govee application frame")
-        keys = [self._session_key, _GOVEE_V1_PUBLIC_KEY]
-        for key in keys:
-            if key is None:
-                continue
-            decoded = _crypt_frame(raw, key, decrypt=True)
-            if xor_checksum(decoded) == 0:
-                return decoded
-        raise ValueError("notification did not match a valid V1 encrypted frame")
+        if timeout is not None and (not isfinite(timeout) or timeout <= 0):
+            raise ValueError("timeout must be a finite positive number or None")
+        self._receiving = True
+        epoch = self._epoch
+        try:
+            if self._pending:
+                return self._pending.popleft()
+            # asyncio.timeout avoids creating a task for every received frame.
+            async with asyncio.timeout(timeout):
+                raw = await self._next_raw(epoch)
+            if len(raw) != FRAME_LENGTH:
+                raise ValueError(
+                    "notification is not a 20-byte Govee application frame"
+                )
+            for key in (self._session_key, _GOVEE_V1_PUBLIC_KEY):
+                if key is not None:
+                    decoded = _crypt_frame(raw, key, decrypt=True)
+                    if xor_checksum(decoded) == 0:
+                        return decoded
+            raise ValueError("notification did not match a valid V1 encrypted frame")
+        finally:
+            self._receiving = False
 
     async def close(self) -> None:
-        """Stop notifications for this encrypted session."""
-        try:
-            if self._notifications_started:
-                self._notifications_started = False
-                if self._connection.is_connected:
-                    await self._connection.stop_notify(self._notify_uuid)
-        finally:
-            self._session_key = None
-            self._pending.clear()
-            while not self._raw_notifications.empty():
-                try:
-                    self._raw_notifications.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
+        """Invalidate, wake receivers, wait for writes, and stop notifications.
+
+        Leave GATT connected for its owner. In-flight writes may complete; no
+        new session write is accepted after invalidation. Stop-notify cleanup
+        has a five-second budget and can raise. Retry this method if teardown
+        fails; repeated close after successful cleanup is safe.
+        """
+        self._fail(RuntimeError("encrypted session closed"))
+        async with self._lifecycle:
+            await self._close_locked()
+
+    async def _close_locked(self) -> None:
+        self._fail(RuntimeError("encrypted session closed"))
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
+        started = self._notifications_started or self._cleanup_pending
+        self._notifications_started = False
+        if started and self._connection.is_connected:
+            async with asyncio.timeout(5.0):
+                await self._connection.stop_notify(self._notify_uuid)
+        self._cleanup_pending = False
 
     async def _write_with_public_key(self, frame: bytes) -> None:
         encrypted = _crypt_frame(frame, _GOVEE_V1_PUBLIC_KEY, decrypt=False)
         await self._connection.write(self._write_uuid, encrypted, response=False)
 
     async def _wait_for_handshake(self, opcode: int, *, timeout: float) -> bytes:
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-        while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"timed out waiting for E7/{opcode:02x} handshake reply"
-                )
-            raw = await asyncio.wait_for(
-                self._raw_notifications.get(), timeout=remaining
-            )
-            if len(raw) != FRAME_LENGTH:
-                continue
-            decoded = _crypt_frame(raw, _GOVEE_V1_PUBLIC_KEY, decrypt=True)
-            if xor_checksum(decoded) != 0:
-                continue
-            if decoded[:2] == bytes((0xE7, opcode)):
-                return decoded
-            # Some firmware reports state while the handshake is finishing.
-            if decoded[0] in (0xAA, 0xEE, 0x33, 0x3A):
-                self._pending.append(decoded)
+        epoch = self._epoch
+        try:
+            async with asyncio.timeout(timeout):
+                while True:
+                    raw = await self._next_raw(epoch)
+                    if len(raw) != FRAME_LENGTH:
+                        continue
+                    decoded = _crypt_frame(raw, _GOVEE_V1_PUBLIC_KEY, decrypt=True)
+                    if xor_checksum(decoded) != 0:
+                        continue
+                    if decoded[:2] == bytes((0xE7, opcode)):
+                        return decoded
+                    if decoded[0] in (0xAA, 0xEE, 0x33, 0x3A):
+                        self._pending.append(decoded)
+        except TimeoutError as error:
+            raise TimeoutError(
+                f"timed out waiting for E7/{opcode:02x} handshake reply"
+            ) from error

@@ -3,13 +3,20 @@
 This package handles BLE discovery and GATT transport. Device-specific wire
 protocols are intentionally supplied by protocol profiles; Govee products do
 not expose a single command protocol shared by every model.
+
+Start with GoveeScanner for standalone discovery or pass a host-discovered
+native BLEDevice to GattConnection. H5179/H7126 profiles are stateless query,
+control, and parsing helpers; H7102Client adds encryption and received state.
+Apps own polling, response matching, recovery, and task shutdown. Exceptions
+are available from govee_ble_client.exceptions. The application guide and API
+reference live in docs/APP_INTEGRATION.md and docs/API.md in the repository.
 """
 
 import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from .device import DiscoveredDevice, GattConnection
+from .device import ConnectionStrategy, DiscoveredDevice, GattConnection
 from .encryption import GoveeAesRc4V1
 from .profiles import (
     H5179Notification,
@@ -37,6 +44,7 @@ from .protocol import (
 from .scanner import DeviceFilter, GoveeScanner
 
 __all__ = [
+    "ConnectionStrategy",
     "DeviceFilter",
     "DiscoveredDevice",
     "GattConnection",

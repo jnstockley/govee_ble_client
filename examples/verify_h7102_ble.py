@@ -113,7 +113,13 @@ async def main() -> None:
                         notifications = await _collect_notifications(
                             client, timeout=0.8, require_fields=set()
                         )
-                except (BleakError, GoveeBLEError, TimeoutError, ValueError, TypeError) as error:
+                except (
+                    BleakError,
+                    GoveeBLEError,
+                    TimeoutError,
+                    ValueError,
+                    TypeError,
+                ) as error:
                     message = f"BLE operation failed: {error}"
                     print(message)
                     results.append(TestResult(name, message, "not compared"))
@@ -190,6 +196,7 @@ async def main() -> None:
                 )
 
             if initial_state.custom_settings is not None:
+
                 async def restore_custom_settings_for_test() -> None:
                     await client.set_custom_settings(
                         initial_state.custom_settings or b""
@@ -288,9 +295,7 @@ async def main() -> None:
             )
 
             async def restore_initial_state() -> None:
-                initial_was_custom = (
-                    initial_state.work_mode is H7102WorkMode.CUSTOM
-                )
+                initial_was_custom = initial_state.work_mode is H7102WorkMode.CUSTOM
                 if initial_state.custom_settings is not None and not initial_was_custom:
                     await client.set_custom_settings(initial_state.custom_settings)
                 if (
@@ -346,10 +351,7 @@ async def main() -> None:
 
     print("\n=== Verification summary ===")
     for result in results:
-        print(
-            f"{result.name}: BLE={result.ble_result}; "
-            f"App/cloud={result.app_match}"
-        )
+        print(f"{result.name}: BLE={result.ble_result}; App/cloud={result.app_match}")
 
 
 async def _read_snapshot(client: H7102Client) -> list[H7102Notification]:
@@ -406,10 +408,7 @@ def _fields_in(notification: H7102Notification) -> set[str]:
         fields.add("mode")
     if notification.fan_speed is not None:
         fields.add("speed")
-    if (
-        notification.mode_selector == 2
-        and notification.mode_selector_data is not None
-    ):
+    if notification.mode_selector == 2 and notification.mode_selector_data is not None:
         fields.add("custom")
     if notification.display_state is not None:
         fields.add("display")
@@ -567,8 +566,8 @@ def _encode_custom_settings(
                 raise ValueError("Continuous is allowed only for segment 3")
             settings.extend(b"\xff\xff\xff\xff")
         else:
-            if not 1 <= duration_minutes <= 0xFFFF:
-                raise ValueError("durations must be between 1 and 65535 minutes")
+            if not 1 <= duration_minutes <= 0xFFFE:
+                raise ValueError("durations must be between 1 and 65534 minutes")
             encoded = duration_minutes.to_bytes(2, "big")
             settings.extend(encoded * 2)
     return bytes(settings)
@@ -581,8 +580,10 @@ async def _compare_with_app(
     ble_result: str = "state values decoded",
 ) -> None:
     answer = (
-        await _ainput("Does this match Govee Home/cloud API state? [y/n/s=skip] ")
-    ).strip().casefold()
+        (await _ainput("Does this match Govee Home/cloud API state? [y/n/s=skip] "))
+        .strip()
+        .casefold()
+    )
     app_match = {"y": "match", "n": "mismatch"}.get(answer, "skipped")
     if app_match == "mismatch":
         detail = (await _ainput("Briefly note the difference: ")).strip()

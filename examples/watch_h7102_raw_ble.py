@@ -117,7 +117,9 @@ async def main() -> None:
                         await asyncio.sleep(0.08)
                     next_query = time.monotonic() + query_interval
                     if show_query_frames:
-                        print(f"Polling captured state queries every {query_interval:g}s.")
+                        print(
+                            f"Polling captured state queries every {query_interval:g}s."
+                        )
                         show_query_frames = False
 
                 try:
@@ -158,9 +160,7 @@ async def main() -> None:
                             _format_custom_segment(segment)
                             for segment in schedule.segments
                         )
-                        decoded = (
-                            f"Custom marker=0x{schedule.marker:02x}; {segments}"
-                        )
+                        decoded = f"Custom marker=0x{schedule.marker:02x}; {segments}"
                 elif notification.mode_selector == 3:
                     decoded = (
                         f"mode selector {notification.mode_selector} data="

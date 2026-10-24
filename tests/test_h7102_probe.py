@@ -11,7 +11,9 @@ from govee_ble.exceptions import DeviceNotConnectedError
 
 
 def make_report():
-    target = next(q for q in probe.QUERIES if q.payload == b"\x01" and q.command == 0x1F)
+    target = next(
+        q for q in probe.QUERIES if q.payload == b"\x01" and q.command == 0x1F
+    )
     rounds = []
     for state in probe.ROUND_STATES:
         samples = []
@@ -20,10 +22,15 @@ def make_report():
             for query in probe.QUERIES:
                 response = (
                     build_packet(0xAA, 0x1F, bytes((1, int(state == "on"))))
-                    if query == target else query.frame
+                    if query == target
+                    else query.frame
                 )
                 sample.append(
-                    {"query": query.name, "tx": query.frame.hex(), "rx": [response.hex()]}
+                    {
+                        "query": query.name,
+                        "tx": query.frame.hex(),
+                        "rx": [response.hex()],
+                    }
                 )
             samples.append(sample)
         rounds.append({"state": state, "samples": samples})

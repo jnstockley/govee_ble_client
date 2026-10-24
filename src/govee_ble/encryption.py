@@ -95,11 +95,12 @@ class GoveeAesRc4V1:
         request = build_encryption_handshake_frame(0x01)
         await self._write_with_public_key(request)
         response = await self._wait_for_handshake(0x01, timeout=timeout)
-        self._session_key = response[2:18]
+        session_key = response[2:18]
 
         confirmation = build_encryption_handshake_frame(0x02)
         await self._write_with_public_key(confirmation)
         await self._wait_for_handshake(0x02, timeout=timeout)
+        self._session_key = session_key
 
     async def write(self, frame: bytes) -> None:
         """Encrypt and send one session frame to the device."""
@@ -133,17 +134,19 @@ class GoveeAesRc4V1:
 
     async def close(self) -> None:
         """Stop notifications for this encrypted session."""
-        if self._notifications_started:
-            self._notifications_started = False
-            if self._connection.is_connected:
-                await self._connection.stop_notify(self._notify_uuid)
-        self._session_key = None
-        self._pending.clear()
-        while not self._raw_notifications.empty():
-            try:
-                self._raw_notifications.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        try:
+            if self._notifications_started:
+                self._notifications_started = False
+                if self._connection.is_connected:
+                    await self._connection.stop_notify(self._notify_uuid)
+        finally:
+            self._session_key = None
+            self._pending.clear()
+            while not self._raw_notifications.empty():
+                try:
+                    self._raw_notifications.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
 
     async def _write_with_public_key(self, frame: bytes) -> None:
         encrypted = _crypt_frame(frame, _GOVEE_V1_PUBLIC_KEY, decrypt=False)
@@ -155,8 +158,12 @@ class GoveeAesRc4V1:
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
-                raise TimeoutError(f"timed out waiting for E7/{opcode:02x} handshake reply")
-            raw = await asyncio.wait_for(self._raw_notifications.get(), timeout=remaining)
+                raise TimeoutError(
+                    f"timed out waiting for E7/{opcode:02x} handshake reply"
+                )
+            raw = await asyncio.wait_for(
+                self._raw_notifications.get(), timeout=remaining
+            )
             if len(raw) != FRAME_LENGTH:
                 continue
             decoded = _crypt_frame(raw, _GOVEE_V1_PUBLIC_KEY, decrypt=True)

@@ -338,9 +338,7 @@ class H7102Client:
         self._require_established()
         if interval < 0:
             raise ValueError("interval cannot be negative")
-        for index, (_name, command, payload) in enumerate(
-            self._profile.state_queries
-        ):
+        for index, (_name, command, payload) in enumerate(self._profile.state_queries):
             await self._send(0xAA, command, payload)
             if interval and index < len(self._profile.state_queries) - 1:
                 await asyncio.sleep(interval)
@@ -398,9 +396,7 @@ class H7102Client:
         if not isinstance(mode, H7102WorkMode):
             raise TypeError("mode must be an H7102WorkMode")
         if mode is H7102WorkMode.CUSTOM:
-            raise ValueError(
-                "Custom mode requires settings; call set_custom_settings"
-            )
+            raise ValueError("Custom mode requires settings; call set_custom_settings")
         await self._send(0x33, 0x05, bytes((_MODE_COMMAND_CODES[mode],)))
 
     async def set_fan_speed(self, speed: int) -> None:
@@ -409,11 +405,7 @@ class H7102Client:
         The frame shape is captured at speed 8. Readback has matched app
         settings 5–8; values 1–4 still need device verification.
         """
-        if (
-            isinstance(speed, bool)
-            or not isinstance(speed, int)
-            or not 1 <= speed <= 8
-        ):
+        if isinstance(speed, bool) or not isinstance(speed, int) or not 1 <= speed <= 8:
             raise ValueError("speed must be an integer from 1 to 8")
         await self._send(0x33, 0x05, bytes((0x01, speed)))
 
@@ -427,16 +419,12 @@ class H7102Client:
         if not isinstance(settings, bytes):
             raise TypeError("settings must be bytes")
         if len(settings) != 16:
-            raise ValueError(
-                "H7102 Custom settings must contain exactly 16 bytes"
-            )
+            raise ValueError("H7102 Custom settings must contain exactly 16 bytes")
         await self._send(0x33, 0x05, b"\x02" + settings)
 
     async def set_custom_schedule(
         self,
-        segments: Sequence[
-            tuple[int, int | None] | tuple[int, int | None, bool]
-        ],
+        segments: Sequence[tuple[int, int | None] | tuple[int, int | None, bool]],
         *,
         marker: int = 0,
     ) -> None:
@@ -449,9 +437,7 @@ class H7102Client:
         duplicated big-endian 16-bit minute values.
         """
         if len(segments) != 3:
-            raise ValueError(
-                "a Custom schedule must contain exactly three segments"
-            )
+            raise ValueError("a Custom schedule must contain exactly three segments")
         if (
             isinstance(marker, bool)
             or not isinstance(marker, int)
@@ -486,10 +472,10 @@ class H7102Client:
             if (
                 isinstance(duration_minutes, bool)
                 or not isinstance(duration_minutes, int)
-                or not 1 <= duration_minutes <= 0xFFFF
+                or not 1 <= duration_minutes <= 0xFFFE
             ):
                 raise ValueError(
-                    "finite duration must be an integer from 1 to 65535 minutes"
+                    "finite duration must be an integer from 1 to 65534 minutes"
                 )
             encoded = duration_minutes.to_bytes(2, "big")
             settings.extend(encoded * 2)

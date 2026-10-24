@@ -6,8 +6,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bleak import BleakScanner
-from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import AdvertisementData
 
 from .device import DiscoveredDevice
 
@@ -28,15 +26,19 @@ class DeviceFilter:
     )
 
     def matches(self, device: DiscoveredDevice) -> bool:
-        if self.name_contains and self.name_contains.casefold() not in (
-            device.name or ""
-        ).casefold():
-            return False
-        if self.service_uuids and not self.service_uuids.intersection(
-            value.casefold() for value in device.service_uuids
+        if (
+            self.name_contains
+            and self.name_contains.casefold() not in (device.name or "").casefold()
         ):
             return False
-        if self.manufacturer_id is not None and self.manufacturer_id not in device.manufacturer_data:
+        if self.service_uuids and not {
+            value.casefold() for value in self.service_uuids
+        }.intersection(value.casefold() for value in device.service_uuids):
+            return False
+        if (
+            self.manufacturer_id is not None
+            and self.manufacturer_id not in device.manufacturer_data
+        ):
             return False
         return self.predicate(device) if self.predicate else True
 

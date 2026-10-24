@@ -88,11 +88,15 @@ async def main() -> None:
             for characteristic in service.characteristics
         }
         if WRITE_UUID in known_characteristics and NOTIFY_UUID in notifiable:
-            answer = input(
-                "Send common-format 0xAA/0x01 power-status query? "
-                "It reported off on this H7126 when off; other-state "
-                "behavior is unverified [y/N]: "
-            ).strip().casefold()
+            answer = (
+                input(
+                    "Send common-format 0xAA/0x01 power-status query? "
+                    "It reported off on this H7126 when off; other-state "
+                    "behavior is unverified [y/N]: "
+                )
+                .strip()
+                .casefold()
+            )
             if answer == "y":
                 try:
                     await PROFILE.request_power_state(connection)
@@ -107,11 +111,15 @@ async def main() -> None:
             and NOTIFY_UUID in notifiable
             and _latest_power_state(notifications[NOTIFY_UUID]) is False
         ):
-            answer = input(
-                "Attempt common-format power ON (0x33/0x01/0x01)? "
-                "This may start the purifier; H7126 command support is "
-                "unverified [y/N]: "
-            ).strip().casefold()
+            answer = (
+                input(
+                    "Attempt common-format power ON (0x33/0x01/0x01)? "
+                    "This may start the purifier; H7126 command support is "
+                    "unverified [y/N]: "
+                )
+                .strip()
+                .casefold()
+            )
             if answer == "y":
                 try:
                     await PROFILE.turn_on(connection)

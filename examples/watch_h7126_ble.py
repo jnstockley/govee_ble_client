@@ -91,7 +91,10 @@ async def main() -> None:
 
         startup_queries = (
             ("filter life AA 19 (app-observed)", PROFILE.request_filter_life),
-            ("mode-category AA 05 00 (observed in H7126 app trace)", PROFILE.request_mode_hint),
+            (
+                "mode-category AA 05 00 (observed in H7126 app trace)",
+                PROFILE.request_mode_hint,
+            ),
             ("panel display AA 16 (experimental)", PROFILE.request_panel_display_state),
         )
         for label, request in startup_queries:
@@ -109,8 +112,7 @@ async def main() -> None:
             while not other_notifications.empty():
                 raw_notification = other_notifications.get_nowait()
                 print(
-                    "Other BLE notification (not decoded): "
-                    f"{raw_notification.hex()}",
+                    f"Other BLE notification (not decoded): {raw_notification.hex()}",
                     flush=True,
                 )
 
@@ -132,8 +134,7 @@ async def main() -> None:
             while not other_notifications.empty():
                 raw_notification = other_notifications.get_nowait()
                 print(
-                    "Other BLE notification (not decoded): "
-                    f"{raw_notification.hex()}",
+                    f"Other BLE notification (not decoded): {raw_notification.hex()}",
                     flush=True,
                 )
         # AA 05 02 reports the saved Custom schedule, not the active mode.
@@ -142,9 +143,7 @@ async def main() -> None:
         notification_event.clear()
         try:
             await PROFILE.request_custom_mode_settings(connection)
-            await asyncio.wait_for(
-                notification_event.wait(), timeout=RESPONSE_TIMEOUT
-            )
+            await asyncio.wait_for(notification_event.wait(), timeout=RESPONSE_TIMEOUT)
         except TimeoutError:
             print(f"No notification received for {label}.")
         except BleakError as error:
@@ -152,8 +151,7 @@ async def main() -> None:
         while not other_notifications.empty():
             raw_notification = other_notifications.get_nowait()
             print(
-                "Other BLE notification (not decoded): "
-                f"{raw_notification.hex()}",
+                f"Other BLE notification (not decoded): {raw_notification.hex()}",
                 flush=True,
             )
 
@@ -199,7 +197,9 @@ async def main() -> None:
                     power_text = "unknown (no status reply yet)"
                 else:
                     age = time.monotonic() - observed_at
-                    power_text = f"{'on' if current_power else 'off'} (reply {age:.1f}s ago)"
+                    power_text = (
+                        f"{'on' if current_power else 'off'} (reply {age:.1f}s ago)"
+                    )
                 mode_text = (
                     current_mode.value
                     if isinstance(current_mode, H7126Mode)

@@ -216,12 +216,20 @@ def find_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--samples", type=int, default=3, help="passes per state (default 3)")
-    parser.add_argument("--timeout", type=float, default=0.75, help="reply window in seconds")
-    parser.add_argument("--output", type=Path, help="save a new JSON report without device IDs")
+    parser.add_argument(
+        "--samples", type=int, default=3, help="passes per state (default 3)"
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=0.75, help="reply window in seconds"
+    )
+    parser.add_argument(
+        "--output", type=Path, help="save a new JSON report without device IDs"
+    )
     args = parser.parse_args()
     if args.samples < 2 or not 0 < args.timeout <= 10:
-        parser.error("use at least two samples and a timeout greater than 0 and at most 10")
+        parser.error(
+            "use at least two samples and a timeout greater than 0 and at most 10"
+        )
     if args.output is not None and args.output.exists():
         parser.error("output already exists; choose a new report path")
 

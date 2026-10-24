@@ -195,13 +195,15 @@ async def main() -> None:
             print(f"BLE check: {ble_result}")
 
             cloud_answer = (
-                await _ainput(
-                    "Does this match Govee Home/cloud API state? [y/n/s=skip] "
+                (
+                    await _ainput(
+                        "Does this match Govee Home/cloud API state? [y/n/s=skip] "
+                    )
                 )
-            ).strip().casefold()
-            cloud_match = {"y": "match", "n": "mismatch"}.get(
-                cloud_answer, "skipped"
+                .strip()
+                .casefold()
             )
+            cloud_match = {"y": "match", "n": "mismatch"}.get(cloud_answer, "skipped")
             if cloud_match == "mismatch":
                 detail = (await _ainput("Briefly note the difference: ")).strip()
                 if detail:
@@ -227,9 +229,9 @@ async def main() -> None:
         async def query_display() -> None:
             await PROFILE.request_panel_display_state(recorder)
 
-        def decoded(predicate: Callable[[H7126Notification], bool]) -> Callable[
-            [Sequence[H7126Notification]], bool | None
-        ]:
+        def decoded(
+            predicate: Callable[[H7126Notification], bool],
+        ) -> Callable[[Sequence[H7126Notification]], bool | None]:
             def check(messages: Sequence[H7126Notification]) -> bool | None:
                 if not messages:
                     return None
@@ -280,8 +282,9 @@ async def main() -> None:
             "request_gear_mode()",
             query_gear_mode,
             verify=decoded(
-                lambda item: item.mode
-                in (H7126Mode.SLEEP, H7126Mode.LOW, H7126Mode.HIGH)
+                lambda item: (
+                    item.mode in (H7126Mode.SLEEP, H7126Mode.LOW, H7126Mode.HIGH)
+                )
             ),
             verification_success="selected fan mode decoded",
         )
@@ -313,6 +316,7 @@ async def main() -> None:
             (H7126Mode.HIGH, PROFILE.set_high_mode),
         )
         for expected_mode, setter in mode_actions:
+
             async def set_and_read_mode(
                 setter=setter,
             ) -> None:
@@ -368,6 +372,7 @@ async def main() -> None:
         )
 
         for enabled in (True, False):
+
             async def set_display_and_read(enabled=enabled) -> None:
                 await PROFILE.set_panel_display(recorder, enabled)
                 await asyncio.sleep(RESPONSE_WAIT)
@@ -489,9 +494,7 @@ def _print_human_values(notifications: Sequence[H7126Notification]) -> None:
                     duration = f"unrecognized duration ({segment.duration_raw.hex()})"
                 values.append(f"  Segment {index}: {mode} for {duration}")
         if item.display_state is not None:
-            values.append(
-                f"Panel display: {'On' if item.display_state else 'Off'}"
-            )
+            values.append(f"Panel display: {'On' if item.display_state else 'Off'}")
         if item.filter_life_percent is not None:
             values.append(f"Filter life: {item.filter_life_percent}%")
 
@@ -539,7 +542,9 @@ def _describe(notification: H7126Notification) -> str:
         elif notification.raw[2:4] == b"\x00\x02":
             values.append("mode family=Custom")
     if notification.custom_schedule is not None:
-        values.append(f"Custom schedule={_format_schedule(notification.custom_schedule)}")
+        values.append(
+            f"Custom schedule={_format_schedule(notification.custom_schedule)}"
+        )
     if notification.display_state is not None:
         values.append(f"panel display={'on' if notification.display_state else 'off'}")
     if notification.filter_life_percent is not None:

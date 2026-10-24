@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from govee_ble import H7102Client, H7102Profile, build_packet
 from examples.verify_h7102_ble import _describe, _fields_in, _last_field
+from govee_ble import H7102Client, H7102Profile, build_packet
 
 OFF = bytes.fromhex("aa1f0100000000000000000000000000000000b4")
 ON = bytes.fromhex("aa1f0101000000000000000000000000000000b5")

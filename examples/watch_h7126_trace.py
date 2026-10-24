@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import argparse
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
 
 ATT_SEND = bytes.fromhex("02 05")
 ATT_RECEIVE = bytes.fromhex("03 05")

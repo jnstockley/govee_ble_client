@@ -124,9 +124,7 @@ class H7126Profile:
         after a filter replacement or when intentionally testing the reset.
         """
         self._validate_layout(connection)
-        await connection.write(
-            self.write_uuid, build_command_packet(0x17, b"\x01")
-        )
+        await connection.write(self.write_uuid, build_command_packet(0x17, b"\x01"))
 
     async def request_mode_hint(self, connection: GattConnection) -> None:
         """Query the H7126 mode category with the app-observed ``AA 05 00``.
@@ -146,9 +144,7 @@ class H7126Profile:
         observed H7126 mode writes and ``EE 05`` notifications.
         """
         self._validate_layout(connection)
-        await connection.write(
-            self.write_uuid, build_packet(0xAA, 0x05, b"\x01")
-        )
+        await connection.write(self.write_uuid, build_packet(0xAA, 0x05, b"\x01"))
 
     async def request_custom_mode_settings(self, connection: GattConnection) -> None:
         """Query the observed Custom-mode settings block with ``AA 05 02``.
@@ -158,9 +154,7 @@ class H7126Profile:
         marker remain available for callers.
         """
         self._validate_layout(connection)
-        await connection.write(
-            self.write_uuid, build_packet(0xAA, 0x05, b"\x02")
-        )
+        await connection.write(self.write_uuid, build_packet(0xAA, 0x05, b"\x02"))
 
     async def request_panel_display_state(self, connection: GattConnection) -> None:
         """Try the matching ``AA 16`` display query (H7126 support unverified)."""
@@ -170,16 +164,12 @@ class H7126Profile:
     async def turn_on(self, connection: GattConnection) -> None:
         """Send the H7126 power-on frame verified against one device."""
         self._validate_layout(connection)
-        await connection.write(
-            self.write_uuid, build_command_packet(0x01, b"\x01")
-        )
+        await connection.write(self.write_uuid, build_command_packet(0x01, b"\x01"))
 
     async def turn_off(self, connection: GattConnection) -> None:
         """Turn the purifier off with the app-observed ``33 01 00`` frame."""
         self._validate_layout(connection)
-        await connection.write(
-            self.write_uuid, build_command_packet(0x01, b"\x00")
-        )
+        await connection.write(self.write_uuid, build_command_packet(0x01, b"\x00"))
 
     async def set_high_mode(self, connection: GattConnection) -> None:
         """Set High mode using the frame captured for Low → High in Govee Home."""
@@ -231,25 +221,35 @@ class H7126Profile:
             try:
                 payload.append(mode_codes[mode])
             except (KeyError, TypeError) as error:
-                raise ValueError("Custom segment mode must be Sleep, Low, or High") from error
+                raise ValueError(
+                    "Custom segment mode must be Sleep, Low, or High"
+                ) from error
             if duration_minutes is None:
                 if index != 2:
-                    raise ValueError("Continuous duration is only supported for segment 3")
+                    raise ValueError(
+                        "Continuous duration is only supported for segment 3"
+                    )
                 payload.extend(b"\xff\xff\xff\xff")
                 continue
             if (
                 isinstance(duration_minutes, bool)
                 or not isinstance(duration_minutes, int)
-                or not 1 <= duration_minutes <= 0xFFFF
+                or not 1 <= duration_minutes <= 0xFFFE
             ):
-                raise ValueError("finite duration must be an integer from 1 to 65535 minutes")
+                raise ValueError(
+                    "finite duration must be an integer from 1 to 65534 minutes"
+                )
             encoded_duration = duration_minutes.to_bytes(2, "big")
             payload.extend(encoded_duration * 2)
 
         self._validate_layout(connection)
-        await connection.write(self.write_uuid, build_packet(0x3A, 0x05, bytes(payload)))
+        await connection.write(
+            self.write_uuid, build_packet(0x3A, 0x05, bytes(payload))
+        )
 
-    async def set_panel_display(self, connection: GattConnection, enabled: bool) -> None:
+    async def set_panel_display(
+        self, connection: GattConnection, enabled: bool
+    ) -> None:
         """Turn the panel display LEDs on or off using captured 0x33/0x16 frames.
 
         The trace captured parameter ``0x00`` and ``0x01`` while the user

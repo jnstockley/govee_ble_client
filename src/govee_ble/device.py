@@ -105,7 +105,9 @@ class GattConnection:
             raise TypeError("data must be bytes")
         await self._client.write_gatt_char(characteristic, data, response=response)
 
-    async def start_notify(self, characteristic: str | BleakGATTCharacteristic, callback: Any) -> None:
+    async def start_notify(
+        self, characteristic: str | BleakGATTCharacteristic, callback: Any
+    ) -> None:
         self._require_connected()
         await self._client.start_notify(characteristic, callback)
 

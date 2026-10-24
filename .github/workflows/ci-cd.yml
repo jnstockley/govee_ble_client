@@ -1,0 +1,143 @@
+---
+name: Lint, Test, and Deploy
+
+on:
+  release:
+    types: [published]
+  pull_request:
+  push:
+    branches:
+      - main
+    paths:
+      - Dockerfile
+      - src/**
+      - tests/**
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/**.yml
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Step 1 - Checkout
+        uses: actions/checkout@v7
+
+      - name: Step 2 - Setup Python
+
+        uses: actions/setup-python@v7
+        with:
+          check-latest: true
+
+      - name: Step 3 - Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Step 4 - Install External Linters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yamllint shellcheck shfmt
+
+      - name: Step 5 - Install Packages
+        run: uv sync --frozen
+
+      - name: Step 6 - Run Linters
+        run: ./scripts/lint.sh
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Step 1 - Checkout
+        uses: actions/checkout@v7
+
+      - name: Step 2 - Setup Python
+        uses: actions/setup-python@v7
+        with:
+          check-latest: true
+
+      - name: Step 3 - Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Step 4 - Install Packages
+        run: uv sync --frozen
+
+      - name: Step 5 - Run Tests
+        run: |
+          export PYTHONPATH=src/:$PYTHONPATH
+          mkdir -p logs/
+          uv run pytest --cov src --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
+      - name: Step 6 - Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  pypi-publish:
+    if: github.event_name == 'release' || github.ref_name == 'main'
+    needs:
+      - lint
+      - test
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Step 1 -Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Step 2 - Setup Python
+        uses: actions/setup-python@v7
+        with:
+          check-latest: true
+
+      - name: Step 3 - Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Step 4 - Install Packages
+        run: uv sync --frozen
+
+      - name: Step 5 - Create version tag
+        if: github.event_name == 'release'
+        run: echo "VERSION=$(echo ${{ github.event.release.tag_name }} | sed 's/^v//')" >> "$GITHUB_ENV"
+
+      - name: Step 5 - Create testing version tag for main branch
+        if: github.ref_name == 'main'
+        run: echo "VERSION=$(date +'%Y%m%d%H%M%S').dev" >> "$GITHUB_ENV"
+
+      - name: Step 6 - Get repository description
+        id: get-repo-description
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const repo = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            return repo.data.description;
+          result-encoding: string
+
+      - name: Step 7 - Update version in pyproject.toml
+        run: |
+          # Replace version in pyproject.toml with the release tag (without 'v' prefix if present)
+          VERSION=${{ env.VERSION }}
+          DESCRIPTION="${{ steps.get-repo-description.outputs.result }}"
+          REPO_URL="https://github.com/${{ github.repository }}"
+          REPO_GIT_URL="https://github.com/${{ github.repository }}.git"
+          ISSUES_URL="https://github.com/${{ github.repository }}/issues"
+          AUTHOR_NAME="${{ github.actor }}"
+          AUTHOR_EMAIL="${{ github.actor }}@users.noreply.github.com"
+
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+          sed -i "s/^description = \".*\"/description = \"$DESCRIPTION\"/" pyproject.toml
+          sed -i "s|^Homepage = \".*\"|Homepage = \"$REPO_URL\"|" pyproject.toml
+          sed -i "s|^Repository = \".*\"|Repository = \"$REPO_GIT_URL\"|" pyproject.toml
+          sed -i "s|^Issues = \".*\"|Issues = \"$ISSUES_URL\"|" pyproject.toml
+          sed -i "s/{ name = \"[^\"]*\", email = \"[^\"]*\"/{ name = \"$AUTHOR_NAME\", email = \"$AUTHOR_EMAIL\"/" pyproject.toml
+
+      - name: Step 8 - Build package
+        run: uv build
+
+      - name: Step 9 - Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

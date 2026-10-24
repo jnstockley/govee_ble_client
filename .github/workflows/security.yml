@@ -1,0 +1,158 @@
+---
+name: Trivy Security Scan
+
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: '22 20 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan
+    runs-on: ubuntu-latest
+    environment: docker
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      id-token: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Get the default branch commit
+        id: default_branch
+        if: github.event_name == 'release'
+        uses: actions/github-script@v9
+        with:
+          result-encoding: string
+          script: |
+            const { data } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `heads/${context.payload.repository.default_branch}`,
+            });
+            return data.object.sha;
+
+      - name: Check whether a Dockerfile exists
+        id: dockerfile
+        run: echo "exists=$([ -f Dockerfile ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch Docker credentials
+        if: steps.dockerfile.outputs.exists == 'true'
+        uses: Infisical/secrets-action@v1.0.18
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          domain: https://secrets.jstockley.com
+          project-slug: ${{ github.event.repository.name }}
+          env-slug: prod
+
+      - name: Log in to Docker Hub
+        if: steps.dockerfile.outputs.exists == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Log in to Docker Hardened Images
+        if: steps.dockerfile.outputs.exists == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: dhi.io
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Build the image being published
+        if: steps.dockerfile.outputs.exists == 'true' && github.event_name == 'release' && !github.event.release.prerelease
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != release ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="$(date +'%Y%m%d%H%M%S').dev"
+          fi
+          docker build \
+            --build-arg "VERSION=$VERSION" \
+            -t "${{ env.DOCKER_USERNAME }}/${{ github.event.repository.name }}:latest" .
+
+      - name: Pull the latest published image
+        if: steps.dockerfile.outputs.exists == 'true' && (github.event_name != 'release' || github.event.release.prerelease)
+        run: docker pull "${{ env.DOCKER_USERNAME }}/${{ github.event.repository.name }}:latest"
+
+      - name: Scan the Docker image
+        if: steps.dockerfile.outputs.exists == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          # Scan only the image built or pulled earlier in this job; do not fall
+          # back to resolving the same tag from a registry.
+          TRIVY_IMAGE_SRC: docker
+        with:
+          version: latest
+          image-ref: '${{ env.DOCKER_USERNAME }}/${{ github.event.repository.name }}:latest'
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+
+      - name: Set up Python
+        if: steps.dockerfile.outputs.exists == 'false'
+        uses: actions/setup-python@v7
+        with:
+          check-latest: true
+
+      - name: Install uv
+        if: steps.dockerfile.outputs.exists == 'false'
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Get the package name
+        id: package_name
+        if: steps.dockerfile.outputs.exists == 'false'
+        run: |
+          NAME=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])")
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build the package being published
+        if: steps.dockerfile.outputs.exists == 'false' && github.event_name == 'release' && !github.event.release.prerelease
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = release ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="$(date +'%Y%m%d%H%M%S').dev"
+          fi
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+          uv build --out-dir .trivy-build
+          uv pip install --system --target .trivy-package .trivy-build/*.whl
+
+      - name: Install the latest published package
+        if: steps.dockerfile.outputs.exists == 'false' && (github.event_name != 'release' || github.event.release.prerelease)
+        run: uv pip install --system --target .trivy-package "${{ steps.package_name.outputs.name }}"
+
+      - name: Scan the Python package
+        if: steps.dockerfile.outputs.exists == 'false'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: latest
+          scan-type: rootfs
+          scan-ref: .trivy-package
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+          ref: ${{ github.event_name == 'release' && format('refs/heads/{0}', github.event.repository.default_branch) || github.ref }}
+          sha: ${{ github.event_name == 'release' && steps.default_branch.outputs.result || github.sha }}

@@ -12,6 +12,7 @@ are available from govee_ble_client.exceptions. The application guide and API
 reference live in docs/APP_INTEGRATION.md and docs/API.md in the repository.
 """
 
+import logging
 import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -42,6 +43,8 @@ from .protocol import (
     parse_notification,
 )
 from .scanner import DeviceFilter, GoveeScanner
+
+logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
     "ConnectionStrategy",

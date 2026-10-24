@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from math import isfinite
 
 from bleak import BleakScanner
 
+from ._logging import log_operation
 from .device import DiscoveredDevice
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,14 +74,18 @@ class GoveeScanner:
         if not isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout must be a finite positive number")
 
-        discovered = await BleakScanner.discover(timeout=timeout, return_adv=True)
-        results: list[DiscoveredDevice] = []
-        for ble_device, advertisement in discovered.values():
-            record = DiscoveredDevice.from_advertisement(ble_device, advertisement)
-            if device_filter is None or device_filter.matches(record):
-                results.append(record)
-        return sorted(
-            results,
-            key=lambda item: item.rssi if item.rssi is not None else -1000,
-            reverse=True,
-        )
+        with log_operation(_LOGGER, "scan", timeout):
+            discovered = await BleakScanner.discover(timeout=timeout, return_adv=True)
+            results: list[DiscoveredDevice] = []
+            for ble_device, advertisement in discovered.values():
+                record = DiscoveredDevice.from_advertisement(ble_device, advertisement)
+                if device_filter is None or device_filter.matches(record):
+                    results.append(record)
+            _LOGGER.debug(
+                "Scan results discovered=%d matched=%d", len(discovered), len(results)
+            )
+            return sorted(
+                results,
+                key=lambda item: item.rssi if item.rssi is not None else -1000,
+                reverse=True,
+            )

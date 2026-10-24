@@ -205,6 +205,88 @@ before deciding to send another control. If `disconnect()` or encrypted
 that purpose. Context-manager cleanup can itself raise, so handle failures
 around the entire context, not just the query inside it.
 
+## Logging and debugging
+
+The library uses Python's standard `logging` hierarchy under
+`govee_ble_client`, with module loggers such as `govee_ble_client.device`,
+`govee_ble_client.scanner`, and `govee_ble_client.encryption`. A package
+`NullHandler` keeps it silent when the host has no logging handlers. Records
+propagate to host handlers; the package does not call `basicConfig()`, change
+levels, choose a formatter, or create console/file handlers. This follows
+[Python's library logging guidance](https://docs.python.org/3/howto/logging.html#configuring-logging-for-a-library).
+
+For a standalone application, configure logging once at the entry point:
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logging.getLogger("govee_ble_client").setLevel(logging.DEBUG)
+```
+
+In a Home Assistant custom integration, let HA configure handlers. Enable the
+library namespace in `configuration.yaml` (the import name uses underscores):
+
+```yaml
+logger:
+  default: warning
+  logs:
+    govee_ble_client: debug
+    # Also add custom_components.<your_integration_domain>: debug if needed.
+```
+
+The [Home Assistant logger documentation](https://www.home-assistant.io/integrations/logger/)
+also describes changing levels with `logger.set_level`. To support the
+integration's built-in debug logging controls, declare the library namespace in
+your integration manifest's `loggers` list:
+
+```json
+"loggers": ["govee_ble_client"]
+```
+
+This is a manifest field fragment, alongside the integration's existing fields.
+See [Home Assistant's manifest logging guidance](https://contributors.home-assistant.io/core/integrations/manifest/#loggers).
+Enabling the custom integration's own namespace alone does not enable a separate
+library namespace. Return the library to `warning` after collecting diagnostics
+to avoid ongoing debug volume. No Home Assistant dependency is required here.
+
+DEBUG records describe connection/reconnection, notification subscriptions,
+GATT reads/writes, encrypted receive/close, handshake stages, scan counts,
+buffer overflow, and cleanup failures. Timed operations report the configured
+timeout, elapsed seconds, and completion or safe exception class name. GATT
+elapsed time includes lock waits and any cleanup; it is not radio latency.
+Handshake timing includes lifecycle waits/cleanup, while its configured timeout
+covers subscription and both handshake stages after lifecycle ownership.
+Encrypted close reports the five-second notification teardown budget; lifecycle
+waits are additional. A completed GATT write still does not confirm device state.
+
+Connection-related records include a `[connection-N]` prefix and a structured
+`connection_id` attribute. The token identifies a handle within one process,
+persists across reconnects, and is unrelated to an address, name, or stable
+device identifier. GATT, encryption, and H7102 client logs share it when using a
+`GattConnection`; standalone injected transports receive their own tokens.
+Scanner records have no connection token. Use the ordinary message formatter
+above; a formatter requiring `connection_id` on every record needs a fallback
+for scanner, application, and dependency records.
+
+Routine operations and propagated failures stay at DEBUG so the application
+can decide availability and avoid repeated error messages during reconnects.
+Isolated disconnect observer exceptions use WARNING because they do not reach
+the caller. Suppressed cleanup failures include the error class at DEBUG.
+Cancellation is preserved, and uncertain writes are never replayed.
+
+The library logs metadata only: no payload bytes, decrypted values, session keys,
+addresses, advertisement names/data, characteristic arguments, exception
+messages, or tracebacks. Third-party backend exceptions can include identifying
+data, so this applies even to cleanup diagnostics. Other dependencies and the
+host application control their own logs; enabling Bleak debug logging or logging
+exceptions in your integration can expose additional data. Hardware capture
+examples intentionally print raw traffic for investigation and are separate
+from package logging. Review logs and captures before sharing them.
+
 ## Several devices and shutdown
 
 Maintain independent per-device workers. Per-connection locks coordinate

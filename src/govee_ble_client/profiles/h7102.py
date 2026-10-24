@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Self
 
+from .._logging import connection_logger
 from ..encryption import GoveeAesRc4V1, xor_checksum
 from ..exceptions import UnsupportedDeviceError
 from ..protocol import build_packet
@@ -310,6 +311,7 @@ class H7102Client:
         on_send: Callable[[bytes], None] | None = None,
     ) -> None:
         self._connection = connection
+        self._logger = connection_logger(_LOGGER, connection)
         self._lifecycle = asyncio.Lock()
         self._connected = False
         self._on_send = on_send
@@ -341,8 +343,10 @@ class H7102Client:
         except BaseException:
             try:
                 await self._transport.close()
-            except Exception:  # noqa: BLE001 - preserve errors without logging payloads
-                _LOGGER.debug("H7102 handshake cleanup failed")
+            except Exception as error:  # noqa: BLE001
+                self._logger.debug(
+                    "H7102 handshake cleanup failed error=%s", type(error).__name__
+                )
             raise
         self._connected = True
 

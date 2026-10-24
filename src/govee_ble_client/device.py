@@ -15,6 +15,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
+from ._logging import connection_logger, log_operation, new_connection_id
 from .exceptions import DeviceNotConnectedError
 
 _LOGGER = logging.getLogger(__name__)
@@ -146,6 +147,8 @@ class GattConnection:
         _validate_timeout(timeout, "timeout")
         _validate_timeout(operation_timeout, "operation_timeout")
         self._device = device
+        self._log_id = new_connection_id()
+        self._logger = connection_logger(_LOGGER, self)
         self._timeout = timeout
         self._operation_timeout = operation_timeout
         self._services = tuple(services) if services is not None else None
@@ -187,11 +190,14 @@ class GattConnection:
         if self._session is not session:
             return
         self._session = None
+        self._logger.debug("GATT session invalidated; disconnect observers notified")
         for callback in tuple(self._disconnect_callbacks):
             try:
                 callback()
-            except Exception:  # noqa: BLE001 - preserve errors without logging payloads
-                _LOGGER.warning("Disconnect callback failed")
+            except Exception as error:  # noqa: BLE001
+                self._logger.warning(
+                    "Disconnect callback failed error=%s", type(error).__name__
+                )
 
     async def connect(self) -> Self:
         """Connect and return this handle; reuse a currently connected session.
@@ -200,12 +206,13 @@ class GattConnection:
         setup retires the session and attempts cleanup before propagating the
         initiating error. Cleanup can extend the configured setup deadline.
         """
-        async with asyncio.timeout(self._timeout):
-            async with self._lock:
-                if not self.is_connected:
-                    await self._disconnect_locked()
-                    await self._connect_locked()
-        return self
+        with log_operation(self._logger, "connect", self._timeout):
+            async with asyncio.timeout(self._timeout):
+                async with self._lock:
+                    if not self.is_connected:
+                        await self._disconnect_locked()
+                        await self._connect_locked()
+            return self
 
     async def _connect_locked(self) -> None:
         device = self._device_resolver() if self._device_resolver else self._device
@@ -232,8 +239,10 @@ class GattConnection:
         except BaseException:
             try:
                 await self._disconnect_locked()
-            except Exception:  # noqa: BLE001 - preserve errors without logging payloads
-                _LOGGER.debug("Connection cleanup failed")
+            except Exception as error:  # noqa: BLE001
+                self._logger.debug(
+                    "Connection cleanup failed error=%s", type(error).__name__
+                )
             raise
 
     async def disconnect(self) -> None:
@@ -244,9 +253,10 @@ class GattConnection:
         later ``disconnect()`` can retry releasing it. Context exit may raise
         this same cleanup error; handle failures around the entire context.
         """
-        async with asyncio.timeout(self._operation_timeout):
-            async with self._lock:
-                await self._disconnect_locked()
+        with log_operation(self._logger, "disconnect", self._operation_timeout):
+            async with asyncio.timeout(self._operation_timeout):
+                async with self._lock:
+                    await self._disconnect_locked()
 
     async def _disconnect_locked(self) -> None:
         client = self._client
@@ -270,32 +280,37 @@ class GattConnection:
         apps should call ``fan.reconnect()`` instead of this method directly.
         Queued I/O belonging to the old session fails rather than crossing over.
         """
-        async with asyncio.timeout(self._timeout):
-            async with self._lock:
-                await self._disconnect_locked()
-                await self._connect_locked()
-        return self
+        with log_operation(self._logger, "reconnect", self._timeout):
+            async with asyncio.timeout(self._timeout):
+                async with self._lock:
+                    await self._disconnect_locked()
+                    await self._connect_locked()
+            return self
 
     @asynccontextmanager
-    async def _operation(self) -> AsyncIterator[BleakClient]:
-        session = self._session
-        async with asyncio.timeout(self._operation_timeout):
-            async with self._lock:
-                client = self._require_connected()
-                if self._session is not session:
-                    raise DeviceNotConnectedError(
-                        "GATT session changed while operation was queued"
-                    )
-                try:
-                    yield client
-                except asyncio.CancelledError:
-                    # Delivery may be ambiguous. Retire this session rather
-                    # than allowing queued commands to use uncertain state.
+    async def _operation(self, operation: str) -> AsyncIterator[BleakClient]:
+        with log_operation(self._logger, operation, self._operation_timeout):
+            session = self._session
+            async with asyncio.timeout(self._operation_timeout):
+                async with self._lock:
+                    client = self._require_connected()
+                    if self._session is not session:
+                        raise DeviceNotConnectedError(
+                            "GATT session changed while operation was queued"
+                        )
                     try:
-                        await self._disconnect_locked()
-                    except Exception:  # noqa: BLE001 - preserve errors without logging payloads
-                        _LOGGER.debug("Cancelled I/O cleanup failed")
-                    raise
+                        yield client
+                    except asyncio.CancelledError:
+                        # Delivery may be ambiguous. Retire this session rather
+                        # than allowing queued commands to use uncertain state.
+                        try:
+                            await self._disconnect_locked()
+                        except Exception as error:  # noqa: BLE001
+                            self._logger.debug(
+                                "Cancelled I/O cleanup failed error=%s",
+                                type(error).__name__,
+                            )
+                        raise
 
     async def read(self, characteristic: str | BleakGATTCharacteristic) -> bytes:
         """Read ATT bytes from a UUID or current-session characteristic.
@@ -304,8 +319,10 @@ class GattConnection:
         and notifications instead; a characteristic may reject ATT reads even
         if it advertises the read property. Backend failures propagate.
         """
-        async with self._operation() as client:
-            return bytes(await client.read_gatt_char(characteristic))
+        async with self._operation("read") as client:
+            data = bytes(await client.read_gatt_char(characteristic))
+            self._logger.debug("GATT read bytes=%d", len(data))
+            return data
 
     async def write(
         self,
@@ -323,7 +340,8 @@ class GattConnection:
         """
         if not isinstance(data, bytes):
             raise TypeError("data must be bytes")
-        async with self._operation() as client:
+        async with self._operation("write") as client:
+            self._logger.debug("GATT write bytes=%d response=%s", len(data), response)
             await client.write_gatt_char(characteristic, data, response=response)
 
     async def start_notify(
@@ -337,12 +355,12 @@ class GattConnection:
         data and keep processing short. Your app owns callback queues/tasks.
         This raw wrapper does not bound them. Re-subscribe after reconnect.
         """
-        async with self._operation() as client:
+        async with self._operation("start_notify") as client:
             await client.start_notify(characteristic, callback)
 
     async def stop_notify(self, characteristic: str | BleakGATTCharacteristic) -> None:
         """Stop notifications on the current session."""
-        async with self._operation() as client:
+        async with self._operation("stop_notify") as client:
             await client.stop_notify(characteristic)
 
     async def __aenter__(self) -> Self:

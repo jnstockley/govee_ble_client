@@ -48,8 +48,9 @@ Session keys and handshake contents are omitted here.
 | `AA 05 02` | Segment value bit `0x10` tracks the saved segment's oscillation setting | Useful for Custom configuration, not global state |
 
 Neither plain `AA 1F 00` nor `AA 1D 00` occurs in the third capture.
-Plain `AA 1F 00` is a query candidate inferred from the existing H7102 `1F`
-command family; its behavior is unverified.
+Plain `AA 1F 00` was initially inferred from the H7102 `1F` command family.
+The controlled run above later observed no changing state field for it; no
+public state decoder uses that candidate.
 
 ## Public Implementation Lead
 

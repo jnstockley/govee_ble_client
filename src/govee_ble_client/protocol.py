@@ -66,7 +66,8 @@ class GoveeNotification:
         """Return the common ``0xAA 0x01`` power value when recognizable.
 
         The remaining payload bytes are preserved because their meaning can
-        differ between device families.
+        differ between device families. ``None`` means unrecognized or absent;
+        use ``is not None`` so a valid power-off value is not discarded.
         """
         if self.code != 0x01 or not self.payload or self.payload[0] not in (0, 1):
             return None
@@ -74,7 +75,14 @@ class GoveeNotification:
 
 
 def parse_notification(data: bytes) -> GoveeNotification:
-    """Parse a common Govee notification and verify its XOR checksum."""
+    """Parse a common ``AA`` reply with at least three bytes and a valid XOR.
+
+    Return ``GoveeNotification`` without interpreting most payload fields.
+    This generic parser does not require exactly 20 bytes or accept arbitrary
+    command/notification prefixes. Prefer a device profile's parser for app
+    state, and pass decrypted plaintext for encrypted devices. Invalid length,
+    prefix, or checksum raises ``ValueError``; no I/O occurs.
+    """
     if len(data) < 3:
         raise ValueError("notification is too short")
     if data[0] != QUERY_PREFIX:

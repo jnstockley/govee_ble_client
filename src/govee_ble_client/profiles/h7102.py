@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Self
 
+from .._logging import connection_logger
 from ..encryption import GoveeAesRc4V1, xor_checksum
 from ..exceptions import UnsupportedDeviceError
 from ..protocol import build_packet
 
 if TYPE_CHECKING:
     from ..device import DiscoveredDevice, GattConnection
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class H7102WorkMode(str, Enum):
@@ -36,7 +41,14 @@ _MODE_COMMAND_CODES = {mode: code for code, mode in _MODE_CODES.items()}
 
 @dataclass(frozen=True, slots=True)
 class H7102State:
-    """Latest H7102 values received during an encrypted session."""
+    """Immutable observations merged by ``H7102Client.receive()``.
+
+    Fields start unknown (``None``) and controls do not update them
+    optimistically. Each recognized reply replaces the client's state record;
+    older references remain snapshots. Reconnect resets all fields. Values
+    have no automatic freshness timestamp. Global oscillation and saved Custom
+    segment flags describe different settings.
+    """
 
     power_state: bool | None = None
     work_mode: H7102WorkMode | None = None
@@ -222,7 +234,8 @@ class H7102Profile:
     write_uuid = "00010203-0405-0607-0809-0a0b0c0d2b11"
     encryption_info_uuid = "00010203-0405-0607-0809-0a0b0c0d2b12"
 
-    # These read frames were observed in the H7102 Govee Home capture.
+    # State-query writes observed in app captures or controlled device checks.
+    # Notifications supply replies; these are not direct ATT read operations.
     state_queries = (
         ("power", 0x01, b""),
         ("mode selector 0", 0x05, b"\x00"),
@@ -283,6 +296,12 @@ class H7102Client:
 
     The caller owns the underlying GATT connection. Use this client as a
     nested async context manager after connecting the discovered device.
+    Run exactly one ``receive()`` task to parse and merge replies; queries and
+    controls return after writing and never wait for applied state. ``on_send``
+    is a synchronous plaintext application-frame callback invoked after a write
+    returns; if it raises, delivery has already been attempted. Keep it short
+    and avoid logging sensitive traffic. GATT options belong to the supplied
+    connection; encrypted receive capacity is fixed at the transport default.
     """
 
     def __init__(
@@ -292,6 +311,9 @@ class H7102Client:
         on_send: Callable[[bytes], None] | None = None,
     ) -> None:
         self._connection = connection
+        self._logger = connection_logger(_LOGGER, connection)
+        self._lifecycle = asyncio.Lock()
+        self._connected = False
         self._on_send = on_send
         self._profile = H7102Profile()
         self._transport = GoveeAesRc4V1(
@@ -302,29 +324,62 @@ class H7102Client:
         self.state = H7102State()
 
     async def connect(self, *, timeout: float = 8.0) -> Self:
-        """Validate GATT and establish the captured AES/RC4 V1 session."""
+        """Validate GATT, establish encryption, and return this client.
+
+        GATT must already be connected. ``timeout`` (finite positive seconds)
+        covers the handshake after lifecycle ownership is acquired, not GATT
+        setup or cleanup. Successful concurrent calls share the session. For
+        recovery after link loss use ``reconnect()``, not this method alone.
+        """
+        async with self._lifecycle:
+            if not (self._connected and self._transport.established):
+                await self._connect_locked(timeout=timeout)
+        return self
+
+    async def _connect_locked(self, *, timeout: float) -> None:
         self._profile.validate_connection(self._connection)
         try:
             await self._transport.connect(timeout=timeout)
         except BaseException:
-            await self._transport.close()
+            try:
+                await self._transport.close()
+            except Exception as error:  # noqa: BLE001
+                self._logger.debug(
+                    "H7102 handshake cleanup failed error=%s", type(error).__name__
+                )
             raise
-        return self
+        self._connected = True
 
     async def reconnect(self, *, timeout: float = 8.0) -> Self:
-        """Restart GATT and the encrypted session after an idle disconnect."""
-        await self.close()
-        await self._connection.reconnect()
-        self._transport = GoveeAesRc4V1(
-            self._connection,
-            write_uuid=self._profile.write_uuid,
-            notify_uuid=self._profile.notify_uuid,
-        )
-        self.state = H7102State()
-        return await self.connect(timeout=timeout)
+        """Replace GATT and encryption, reset state, and return this client.
+
+        End the previous receiver and start one for the new session. GATT
+        setup uses the original handle's timeout/resolver/connector; this
+        method's ``timeout`` controls encryption only. No command is replayed.
+        """
+        async with self._lifecycle:
+            await self._close_locked()
+            await self._connection.reconnect()
+            self._transport = GoveeAesRc4V1(
+                self._connection,
+                write_uuid=self._profile.write_uuid,
+                notify_uuid=self._profile.notify_uuid,
+            )
+            self.state = H7102State()
+            await self._connect_locked(timeout=timeout)
+        return self
 
     async def close(self) -> None:
-        """Stop notifications for this encrypted session."""
+        """Close encryption and wake receivers; leave caller-owned GATT open.
+
+        This can raise if notification cleanup fails; retain the client and
+        retry cleanup before reuse. Successful repeated close is safe.
+        """
+        async with self._lifecycle:
+            await self._close_locked()
+
+    async def _close_locked(self) -> None:
+        self._connected = False
         await self._transport.close()
 
     async def __aenter__(self) -> Self:
@@ -334,7 +389,13 @@ class H7102Client:
         await self.close()
 
     async def request_state(self, *, interval: float = 0.08) -> None:
-        """Request power, mode selectors, speed, display, and oscillation."""
+        """Send seven state queries; replies are consumed separately.
+
+        Default ``interval`` adds six 80 ms gaps; zero disables pacing. This
+        method returns ``None`` and does not refresh state itself. Run one
+        receiver and use required fields plus an overall deadline, rather
+        than assuming exactly seven notifications complete a snapshot.
+        """
         self._require_established()
         if interval < 0:
             raise ValueError("interval cannot be negative")
@@ -353,9 +414,19 @@ class H7102Client:
         await self._send(0xAA, 0x1F, b"\x01")
 
     async def receive(self, *, timeout: float | None = None) -> H7102Notification:
-        """Receive one notification and merge recognized values into state."""
+        """Return one notification and replace state with recognized updates.
+
+        One consumer per session is required. ``timeout=None`` waits without
+        a deadline; otherwise pass finite positive seconds. A receive timeout
+        alone leaves the session open. Malformed data raises ``ValueError``;
+        link loss, overflow, or replacement invalidates the old stream. No
+        automatic receiver task, polling loop, or freshness tracking is started.
+        """
         self._require_established()
-        raw = await self._transport.receive(timeout=timeout)
+        transport = self._transport
+        raw = await transport.receive(timeout=timeout)
+        if transport is not self._transport or not transport.established:
+            raise RuntimeError("H7102 session changed while receiving")
         notification = self._profile.parse_notification(raw)
         updates: dict[str, object] = {}
         if notification.power_state is not None:
@@ -410,11 +481,12 @@ class H7102Client:
         await self._send(0x33, 0x05, bytes((0x01, speed)))
 
     async def set_custom_settings(self, settings: bytes) -> None:
-        """Select Custom and send its opaque, captured 16-byte settings block.
+        """Select Custom and write its raw, captured 16-byte settings block.
 
-        The H7102 app capture shows this block following selector ``0x02``.
-        Its internal fields are not fully mapped; use bytes read from this
-        device or from a separately verified configuration.
+        The block follows selector ``0x02``. Speed, duration, and per-segment
+        oscillation are decoded; the marker and reserved bits remain uncertain.
+        Prefer ``set_custom_schedule`` for typed entries or use bytes read from
+        this device. Changed schedules still need hardware round-trip checks.
         """
         if not isinstance(settings, bytes):
             raise TypeError("settings must be bytes")
@@ -433,8 +505,11 @@ class H7102Client:
         Each entry is ``(speed, duration_minutes, oscillate)``. Two-item
         entries remain accepted and default oscillation to off. The oscillation
         flag is encoded as bit 0x10 in the speed byte. ``None`` selects
-        Continuous and is allowed on segment three only. Finite durations use
-        duplicated big-endian 16-bit minute values.
+        Continuous and is allowed on segment three only. Finite durations are
+        integers 1–65534 minutes in duplicated big-endian words. The integer
+        marker is 0–255; preserve readback's marker when retaining settings.
+        This method does not wait for a readback or establish hardware support
+        for unverified speed/duration combinations.
         """
         if len(segments) != 3:
             raise ValueError("a Custom schedule must contain exactly three segments")
@@ -498,11 +573,15 @@ class H7102Client:
         await self._send(0x33, 0x1F, bytes((0x01, int(enabled))))
 
     async def _send(self, prefix: int, command: int, payload: bytes) -> None:
-        self._require_established()
-        frame = build_packet(prefix, command, payload)
-        await self._transport.write(frame)
-        if self._on_send is not None:
-            self._on_send(frame)
+        transport = self._transport
+        async with self._lifecycle:
+            if transport is not self._transport:
+                raise RuntimeError("H7102 session changed while send was queued")
+            self._require_established()
+            frame = build_packet(prefix, command, payload)
+            await transport.write(frame)
+            if self._on_send is not None:
+                self._on_send(frame)
 
     def _require_established(self) -> None:
         if not self._transport.established:

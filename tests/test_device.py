@@ -15,7 +15,7 @@ def test_real_client_and_scanner_are_blocked(run_async):
     with pytest.raises(pytest.fail.Exception, match="forbidden"):
         run_async(bleak.BleakScanner.discover())
     with pytest.raises(pytest.fail.Exception, match="forbidden"):
-        GattConnection(SimpleNamespace())
+        run_async(GattConnection(SimpleNamespace()).connect())
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_discovered_device_connection_options(fake_bleak_factory):
     found = DiscoveredDevice("synthetic", None, None, _ble_device=object())
     connection = found.connect(timeout=12)
     assert isinstance(connection, GattConnection)
-    factory.assert_called_once_with(found._ble_device, timeout=12)
+    factory.assert_not_called()
     assert not connection.is_connected
     for timeout in (0, -1, float("nan"), float("inf")):
         with pytest.raises(ValueError):
@@ -81,10 +81,7 @@ def test_disconnected_gatt_operations_fail_before_backend(
             run_async(connection.start_notify("uuid", lambda *_: None))
         else:
             run_async(connection.stop_notify("uuid"))
-    assert not clients[0].read_gatt_char.called
-    assert not clients[0].write_gatt_char.called
-    assert not clients[0].start_notify.called
-    assert not clients[0].stop_notify.called
+    assert not clients
 
 
 def test_gatt_forwarding_and_context_cleanup(fake_bleak_factory, run_async):
@@ -141,9 +138,9 @@ def test_reconnect_replaces_client_and_preserves_parameters(
 def test_connect_failure_propagates_without_claiming_connected(
     fake_bleak_factory, run_async
 ):
-    _, clients = fake_bleak_factory
+    factory, _ = fake_bleak_factory
     connection = GattConnection(object())
-    clients[0].connect.side_effect = RuntimeError("connect failed")
+    factory.side_effect = RuntimeError("connect failed")
     with pytest.raises(RuntimeError, match="connect failed"):
         run_async(connection.connect())
     assert not connection.is_connected

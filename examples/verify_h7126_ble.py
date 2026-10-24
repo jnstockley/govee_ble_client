@@ -3,7 +3,8 @@
 Run with ``PYTHONPATH=src python examples/verify_h7126_ble.py``. This script
 talks to the purifier over BLE. It does not call Govee's cloud API; after each
 test it asks the operator to compare the BLE result with Govee Home or a cloud
-API state response.
+API state response. Controls and filter-counter reset require confirmation;
+this is a manual hardware verifier, not an unattended application example.
 """
 
 from __future__ import annotations

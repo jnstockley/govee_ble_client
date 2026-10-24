@@ -106,8 +106,9 @@ def fake_bleak_factory(monkeypatch):
     clients = []
 
     class FakeBleakClient:
-        def __init__(self, device, *, timeout):
+        def __init__(self, device, *, timeout, disconnected_callback, services=None):
             self.device = device
+            self.disconnected_callback = disconnected_callback
             self.timeout = timeout
             self.is_connected = False
             self.services = ["fake service"]
@@ -124,6 +125,7 @@ def fake_bleak_factory(monkeypatch):
 
         async def _disconnect(self):
             self.is_connected = False
+            self.disconnected_callback(self)
 
     factory = Mock(side_effect=FakeBleakClient)
     monkeypatch.setattr(device_module, "BleakClient", factory)

@@ -1,4 +1,4 @@
-"""Experimental H7126 BLE profile with observed power and mode operations."""
+"""H7126 query/control frames and notification parsing backed by device evidence."""
 
 from __future__ import annotations
 
@@ -73,7 +73,13 @@ class H7126CustomSchedule:
 
 @dataclass(frozen=True, slots=True)
 class H7126Notification:
-    """Decoded H7126 status fields with the original bytes preserved."""
+    """One parsed notification, not a complete or accumulated purifier state.
+
+    Optional fields are ``None`` when absent/unrecognized; retain earlier app
+    observations instead of clearing them, and test booleans with ``is not
+    None``. ``mode_query_response`` identifies a mode query response, not
+    proof of an applied control. ``raw`` preserves the original frame.
+    """
 
     raw: bytes
     power_state: bool | None = None
@@ -92,6 +98,13 @@ class H7126Profile:
     display, and the three-segment Custom schedule have been observed in H7126
     app traffic. Custom durations are total minutes; the schedule marker is
     preserved but its meaning remains unknown.
+
+    The profile is stateless. Subscribe to ``notify_uuid`` before requesting
+    values, parse callbacks with ``parse_notification``, and retain app state
+    from non-``None`` fields. Request/control methods validate GATT layout and
+    return ``None`` after writing, without waiting for confirmation. Their
+    backend errors propagate. Support is verified on the supplied purifier;
+    firmware variants still need independent checks.
     """
 
     model = "H7126"
@@ -157,7 +170,11 @@ class H7126Profile:
         await connection.write(self.write_uuid, build_packet(0xAA, 0x05, b"\x02"))
 
     async def request_panel_display_state(self, connection: GattConnection) -> None:
-        """Try the matching ``AA 16`` display query (H7126 support unverified)."""
+        """Request panel LED state with ``AA 16``, verified on the supplied H7126.
+
+        Parse ``display_state`` from a notification; returning from this method
+        confirms only that the query write completed, not that a reply arrived.
+        """
         self._validate_layout(connection)
         await connection.write(self.write_uuid, build_query_packet(0x16))
 
@@ -187,7 +204,9 @@ class H7126Profile:
         """Apply the captured three-segment Custom schedule.
 
         The captured schedule is High for 10 minutes, Low for 10 minutes, then
-        Sleep in Continuous mode.
+        Sleep in Continuous mode. This replaces schedule settings; it does not
+        restore the device's saved Custom schedule. To preserve chosen values,
+        read them first and pass them to ``set_custom_schedule``.
         """
         await self.set_custom_schedule(
             connection,
@@ -205,9 +224,11 @@ class H7126Profile:
     ) -> None:
         """Set three Custom segments as ``(mode, duration_minutes)`` pairs.
 
-        ``None`` selects the app's Continuous duration and is allowed for the
-        final segment. Finite durations are encoded as two identical big-endian
-        16-bit total-minute values, confirmed with 10 minutes and 1 h 10 min.
+        Exactly three entries are required, each using Sleep, Low, or High.
+        ``None`` selects Continuous on the final segment only. Finite durations
+        are integers 1–65534 minutes encoded as duplicated big-endian words;
+        65535 is reserved by the Continuous sentinel. Read the settings back
+        to confirm application; this method only submits the control write.
         """
         if len(segments) != 3:
             raise ValueError("a Custom schedule must contain exactly three segments")
@@ -271,7 +292,14 @@ class H7126Profile:
 
     @staticmethod
     def parse_notification(data: bytes) -> H7126Notification:
-        """Parse observed H7126 power, mode, and display notifications."""
+        """Parse power, mode, Custom schedule, display, and filter-life fields.
+
+        Return a partial ``H7126Notification`` preserving raw bytes. ``AA``
+        frames use common length/checksum validation; non-``AA`` frames require
+        20 bytes. Unsupported prefixes (including some command acknowledgements)
+        or malformed frames raise ``ValueError``. A saved selector-2 schedule
+        reply does not establish the active mode.
+        """
         from ..protocol import parse_notification
 
         if data[:1] == b"\xaa":

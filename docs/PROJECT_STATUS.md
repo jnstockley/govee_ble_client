@@ -1,6 +1,6 @@
 # Project Status and Device Development
 
-This library provides reusable asynchronous BLE discovery and GATT transport, shared frame helpers, and model-specific Govee profiles. It is not a universal Govee command implementation: each profile is limited to behavior observed for that model. The package does not yet include a Home Assistant or HACS integration.
+This library provides reusable asynchronous BLE discovery and GATT transport, shared frame helpers, and model-specific Govee profiles. It is not a universal Govee command implementation: each profile is limited to behavior observed for that model. The package supplies Home Assistant-friendly connection hooks but does not include an installable Home Assistant/HACS integration. Start with the [application guide](APP_INTEGRATION.md) and [API reference](API.md).
 
 ## Device Status
 
@@ -9,15 +9,15 @@ This library provides reusable asynchronous BLE discovery and GATT transport, sh
 ### H7126 Air Purifier
 
 - **Implemented and manually verified:** Power read/write; Sleep, Low, and High modes; Custom mode and its three-segment schedule; panel display read/write; filter-life query and reset. The interactive verifier reported matching BLE readbacks and Govee Home/cloud state for its checks.
-- **Evidence:** App PacketLogger captures plus direct BLE reads and writes. Schedule modes and durations were checked, including finite minutes and the Continuous sentinel.
+- **Evidence:** App PacketLogger captures plus direct BLE query/reply exchanges and control writes. Schedule modes and durations were checked, including finite minutes and the Continuous sentinel.
 - **Remaining limits:** Validation covers the supplied purifier, not every H7126 firmware. The filter percentage comes from an observed response offset. The display query was verified on this device; other variants may differ.
 - **Tools:** `examples/inspect_h7126.py`, `examples/watch_h7126_ble.py`, `examples/watch_h7126_trace.py`, and `examples/verify_h7126_ble.py`.
 
 ### H5179 Thermo-Hygrometer
 
-- **Implemented:** Temperature and humidity query (`AA 0A`), battery query (`AA 08`), Celsius/Fahrenheit conversion, and a host-side “last BLE measurement received” timestamp.
+- **Implemented:** Temperature and humidity query (`AA 0A`), battery query (`AA 08`), Celsius/Fahrenheit conversion, and a watcher-only host-side “last BLE measurement received” timestamp. The library notification type itself has no timestamp field.
 - **Evidence:** Command and response layouts come from the supplied capture; the user reviewed the resulting readings and timestamp behavior.
-- **Missing or unverified:** The current measurement response has no device timestamp. Historical records and their relative-time fields were not present in the H5179 capture. No write operations are implemented; temperature-unit control is out of scope.
+- **Missing or unverified:** The current measurement response has no device timestamp. Historical records and their relative-time fields were not present in the H5179 capture. No state-changing controls are implemented; measurement and battery queries are GATT writes. Temperature-unit control is out of scope.
 - **Tool:** `examples/watch_h5179_ble.py`.
 
 ### H7102 Tower Fan
@@ -29,6 +29,20 @@ This library provides reusable asynchronous BLE discovery and GATT transport, sh
 
 Global oscillation research and the controlled off/on query probe are documented
 in [H7102 oscillation investigation](H7102_OSCILLATION.md).
+
+## Transport and Application Integration
+
+Connection handles coordinate individual operations per peripheral and allow
+independent devices to progress concurrently. New sessions create fresh clients;
+optional native-device resolvers and connection strategies support host-managed
+adapters. Apps own polling, reply matching, recovery/backoff, and availability.
+H5179/H7126 are stateless; H7102 state updates only through its single receiver.
+See the [application guide](APP_INTEGRATION.md) for read-only recipes and shutdown.
+
+The implementation targets x86 and ARM64 without architecture-specific library
+code. Offline tests cover concurrency and lifecycle behavior, not radio latency,
+proxy capacity, firmware compatibility, or a running Home Assistant integration.
+See [protocol evidence](PROTOCOL_EVIDENCE.md) for captures and manual tools.
 
 ## Adding and Verifying a Device
 

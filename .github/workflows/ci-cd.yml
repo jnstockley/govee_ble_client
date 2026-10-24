@@ -126,24 +126,23 @@ jobs:
       - name: Step 4 - Install Packages
         run: uv sync --frozen
 
-      - name: Verify release tag matches project version
+      - name: Set project version from release tag
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          python - <<'PYCODE'
+          version="$(python - <<'PYCODE'
           import os
-          import tomllib
-          from pathlib import Path
+          import re
 
-          tag_version = os.environ["RELEASE_TAG"].removeprefix("v")
-          with Path("pyproject.toml").open("rb") as project_file:
-              project_version = tomllib.load(project_file)["project"]["version"]
-          if tag_version != project_version:
-              raise SystemExit(
-                  f"Release tag {tag_version!r} does not match "
-                  f"pyproject.toml version {project_version!r}"
-              )
+          version = re.sub(r"[^A-Za-z0-9.!+_-]", "", os.environ["RELEASE_TAG"].strip())
+          if version.startswith(("v", "V")):
+              version = version[1:]
+          if not version or not version[0].isdigit():
+              raise SystemExit("Release tag does not contain a valid version")
+          print(version)
           PYCODE
+          )"
+          uv version "$version" --no-sync
 
       - name: Build package
         run: uv build

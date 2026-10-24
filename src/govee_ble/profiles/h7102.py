@@ -129,6 +129,24 @@ class H7102Notification:
         return self.payload[0] == 1
 
     @property
+    def oscillation_state(self) -> bool | None:
+        """Read global oscillation from AA 1F selector 1, state 00/01.
+
+        Six off and six on replies matched two physical off/on cycles in
+        powered-on Normal mode at speed 5. Other modes and speeds are unverified.
+        Command acknowledgements and saved Custom flags are not live state.
+        """
+        if (
+            self.prefix != 0xAA
+            or self.command != 0x1F
+            or len(self.payload) < 2
+            or self.payload[0] != 1
+            or self.payload[1] not in (0, 1)
+        ):
+            return None
+        return self.payload[1] == 1
+
+    @property
     def mode_code(self) -> int | None:
         """Return the AA 05 selector-0 value for the active work mode."""
         if (
@@ -195,7 +213,7 @@ class H7102Profile:
 
     PacketLogger captures show AES/RC4 V1 encryption, standard 20-byte Govee
     framing, app-observed state queries, and commands for known controls.
-    Oscillation can be commanded, but its state is not reliably readable.
+    The AA 1F selector-1 query also returned labeled oscillation off/on states.
     """
 
     model = "H7102"
@@ -212,6 +230,7 @@ class H7102Profile:
         ("mode selector 2", 0x05, b"\x02"),
         ("mode selector 3", 0x05, b"\x03"),
         ("display state", 0x16, b""),
+        ("oscillation state", 0x1F, b"\x01"),
     )
 
     def matches(self, device: DiscoveredDevice) -> bool:
@@ -315,7 +334,7 @@ class H7102Client:
         await self.close()
 
     async def request_state(self, *, interval: float = 0.08) -> None:
-        """Request power, mode selectors, fan speed, and display state."""
+        """Request power, mode selectors, speed, display, and oscillation."""
         self._require_established()
         if interval < 0:
             raise ValueError("interval cannot be negative")
@@ -331,6 +350,10 @@ class H7102Client:
         self._require_established()
         await self._send(0xAA, 0x05, bytes((0x02,)))
 
+    async def request_oscillation_state(self) -> None:
+        """Query global oscillation with the observed AA 1F 01 frame."""
+        await self._send(0xAA, 0x1F, b"\x01")
+
     async def receive(self, *, timeout: float | None = None) -> H7102Notification:
         """Receive one notification and merge recognized values into state."""
         self._require_established()
@@ -345,6 +368,8 @@ class H7102Client:
             updates["fan_speed"] = notification.fan_speed
         if notification.display_state is not None:
             updates["display_state"] = notification.display_state
+        if notification.oscillation_state is not None:
+            updates["oscillation_state"] = notification.oscillation_state
         if (
             notification.mode_selector == 2
             and notification.mode_selector_data is not None
@@ -480,7 +505,7 @@ class H7102Client:
     async def set_oscillation(self, enabled: bool) -> None:
         """Set oscillation with captured ``33 1F 01`` on/off commands.
 
-        Current state queries do not provide a reliable oscillation readback.
+        Follow with request_oscillation_state and receive for device readback.
         """
         if not isinstance(enabled, bool):
             raise TypeError("enabled must be a bool")

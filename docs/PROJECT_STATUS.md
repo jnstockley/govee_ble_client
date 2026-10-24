@@ -4,7 +4,7 @@ This library provides reusable asynchronous BLE discovery and GATT transport, sh
 
 ## Device Status
 
-“Manually verified” means a device or app comparison was reported during development. It does not imply support across all firmware revisions or hardware variants. There is currently no automated test suite in the repository.
+“Manually verified” means a device or app comparison was reported during development. It does not imply support across all firmware revisions or hardware variants. A focused offline test suite now covers H7102 oscillation decoding and probe recovery; other device features still rely on captures and manual verification.
 
 ### H7126 Air Purifier
 
@@ -23,9 +23,12 @@ This library provides reusable asynchronous BLE discovery and GATT transport, sh
 ### H7102 Tower Fan
 
 - **Implemented and manually exercised:** AES/RC4 V1 session setup; power; Normal, Sleep, Nature, and Custom mode reads/writes; fan speed reads and writes; panel display on/off; global oscillation command; Custom schedule query and writer. The verifier supports reconnecting after an interactive pause.
-- **Observed:** App mode codes are Normal `1`, Sleep `5`, Nature `6`, Custom `2`. Fan speeds 5–8 matched app readback. Custom selector `AA 05 02` returns three speed/duration entries. Durations use duplicated big-endian minute words and `FF FF FF FF` for Continuous. The speed byte's `0x10` bit indicates per-segment oscillation: speed 5 was observed as `0x15` with oscillation on and `0x05` with it off.
-- **Remaining limits:** Confirm a write/readback round trip for a changed Custom schedule, including per-segment oscillation. Speeds 1–4 and global oscillation state readback are unverified. Selector 3 data and the schedule marker remain uninterpreted. AES/RC4 V1 is legacy compatibility transport, not modern authenticated encryption.
+- **Observed:** App mode codes are Normal `1`, Sleep `5`, Nature `6`, Custom `2`. Fan speeds 5–8 matched app readback. Custom selector `AA 05 02` returns three speed/duration entries. Durations use duplicated big-endian minute words and `FF FF FF FF` for Continuous. The speed byte's `0x10` bit indicates per-segment oscillation: speed 5 was observed as `0x15` with oscillation on and `0x05` with it off. Global `AA 1F 01` replies returned `00` in all six physically labeled off samples and `01` in all six on samples across two complete cycles, in powered-on Normal mode at speed 5, without disconnects. Global oscillation reading is implemented in the API and watcher, and the verifier checks writes against it.
+- **Remaining limits:** Confirm a write/readback round trip for a changed Custom schedule, including per-segment oscillation. Check global oscillation at other speeds/modes and while powered off. Speeds 1–4 remain unverified. Selector 3 data and the schedule marker remain uninterpreted. AES/RC4 V1 is legacy compatibility transport, not modern authenticated encryption.
 - **Tools:** `examples/watch_h7102_raw_ble.py` and `examples/verify_h7102_ble.py`.
+
+Global oscillation research and the controlled off/on query probe are documented
+in [H7102 oscillation investigation](H7102_OSCILLATION.md).
 
 ## Adding and Verifying a Device
 
@@ -37,4 +40,4 @@ This library provides reusable asynchronous BLE discovery and GATT transport, sh
 
 ## Development Commands and Test Coverage
 
-Run `uv sync --all-groups` to install the locked environment, `uv build` to build distributions, and `uv run pytest` to run automated tests. The project currently has no `tests/` directory, so manual device verification is the existing validation method. Run examples from the repository root with `PYTHONPATH=src`; for example, `PYTHONPATH=src python examples/verify_h7102_ble.py`. Verifiers can change physical device state and ask before each action.
+Run `uv sync --all-groups` to install the locked environment, `uv build` to build distributions, and `PYTHONPATH=src uv run pytest` to run the tests in `tests/`. The current suite covers observed H7102 oscillation replies, invalid frames, query construction, state updates, probe correlations, and recovery from a disconnect during a query. These offline tests do not establish hardware support for other devices or firmware. Run examples from the repository root with `PYTHONPATH=src`; for example, `PYTHONPATH=src python examples/verify_h7102_ble.py`. Verifiers can change physical device state and ask before each action.

@@ -3,7 +3,7 @@
 Run with ``PYTHONPATH=src python examples/verify_h7102_ble.py``. This script
 connects directly over BLE, sends commands only after confirmation, checks BLE
 readback where available, and asks the operator to compare with Govee Home or
-the cloud API. Oscillation has no reliable BLE readback.
+the cloud API. Global oscillation readback uses the observed AA 1F 01 query.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from govee_ble import (
 from govee_ble.exceptions import GoveeBLEError
 
 RESPONSE_TIMEOUT = 5.0
-STATE_FIELDS = {"power", "mode", "speed", "custom", "display"}
+STATE_FIELDS = {"power", "mode", "speed", "custom", "display", "oscillation"}
 
 
 @dataclass(slots=True)
@@ -64,20 +64,6 @@ async def main() -> None:
     if (await _ainput("Continue? [y/N] ")).strip().casefold() != "y":
         return
 
-    oscillation_answer = (
-        await _ainput(
-            "Current oscillation state in Govee Home [on/off/unknown]: "
-        )
-    ).strip().casefold()
-    initial_oscillation = {
-        "on": True,
-        "off": False,
-        "unknown": None,
-        "": None,
-    }.get(oscillation_answer)
-    if oscillation_answer not in ("on", "off", "unknown", ""):
-        print("Unrecognized oscillation state; it will not be restored automatically.")
-
     results: list[TestResult] = []
 
     async with device.connect(timeout=15) as connection:
@@ -88,6 +74,9 @@ async def main() -> None:
             await _read_snapshot(client)
             await _compare_with_app(results, "request_state() initial snapshot")
             initial_state = client.state
+            initial_oscillation = initial_state.oscillation_state
+            if initial_oscillation is None:
+                print("No initial oscillation reply; its state cannot be restored.")
 
             async def run_step(
                 name: str,
@@ -279,9 +268,10 @@ async def main() -> None:
 
             for enabled in (True, False):
                 await run_step(
-                    f"set_oscillation({enabled})",
+                    f"set_oscillation({enabled}) + readback",
                     lambda enabled=enabled: client.set_oscillation(enabled),
-                    readback=False,
+                    field="oscillation",
+                    expected=enabled,
                 )
 
             await run_step(
@@ -341,6 +331,8 @@ async def main() -> None:
                 restore_expectations["display"] = initial_state.display_state
             if initial_state.custom_settings is not None:
                 restore_expectations["custom"] = initial_state.custom_settings
+            if initial_oscillation is not None and initial_state.power_state is True:
+                restore_expectations["oscillation"] = initial_oscillation
 
             await run_step(
                 "restore initial readable state",
@@ -348,7 +340,7 @@ async def main() -> None:
                 expected_fields=restore_expectations,
                 confirmation=(
                     "Restore the initial power/mode/speed/display state and the "
-                    "noted oscillation state? [Enter/s=skip]: "
+                    "read oscillation state? [Enter/s=skip]: "
                 ),
             )
 
@@ -421,6 +413,8 @@ def _fields_in(notification: H7102Notification) -> set[str]:
         fields.add("custom")
     if notification.display_state is not None:
         fields.add("display")
+    if notification.oscillation_state is not None:
+        fields.add("oscillation")
     return fields
 
 
@@ -436,6 +430,8 @@ def _last_field(notifications: Sequence[H7102Notification], field: str) -> objec
             return item.mode_selector_data
         if field == "display" and item.display_state is not None:
             return item.display_state
+        if field == "oscillation" and item.oscillation_state is not None:
+            return item.oscillation_state
     return None
 
 
@@ -451,6 +447,9 @@ def _describe(notification: H7102Notification) -> str:
     if notification.display_state is not None:
         state = "on" if notification.display_state else "off"
         return f"panel display={state}"
+    if notification.oscillation_state is not None:
+        state = "on" if notification.oscillation_state else "off"
+        return f"global oscillation={state}"
     if notification.mode_selector == 2:
         data = notification.mode_selector_data or b""
         schedule = notification.custom_schedule

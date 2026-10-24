@@ -230,22 +230,30 @@ The display query has returned both on and off in user captures.
 work-mode, speed, panel-display, and oscillation commands. Custom schedules
 can be read as speeds, durations, and per-segment oscillation, and written
 with `set_custom_schedule()`.
-The standalone/global oscillation state is not reliably returned by the
-available queries. Speed writes use the captured
+Global oscillation is queried with `AA 1F 01`. The following response byte is
+`00` for off and `01` for on. All 12 samples across two physical off/on cycles
+matched in powered-on Normal mode at speed 5, with no disconnects. Other
+speeds, modes, and powered-off behavior still need confirmation.
+Use `request_oscillation_state()` and `receive()` to
+update `fan.state.oscillation_state`. The regular state snapshot also queries it.
+Speed writes use the captured
 `33 05 01 <speed>` layout, confirmed in the capture at speed 8; values 1–4
 still need verification. Mode writes for Sleep and Nature were captured;
 Normal uses its observed state code. Custom mode requires a settings block.
+
+For the current global oscillation query findings and a controlled off/on
+comparison tool, see [H7102 oscillation investigation](docs/H7102_OSCILLATION.md).
 
 Use the client inside the discovered device's connected GATT context. The
 example below requests a snapshot and shows one optional control call:
 
 ```python
-from govee_ble import H7102Client, H7102WorkMode
+from govee_ble import H7102Client, H7102Profile, H7102WorkMode
 
 async with discovered_device.connect() as connection:
     async with H7102Client(connection) as fan:
         await fan.request_state()
-        for _ in range(6):
+        for _ in H7102Profile.state_queries:
             await fan.receive(timeout=2)
         print(fan.state)
 
@@ -272,8 +280,8 @@ PYTHONPATH=src python examples/watch_h7102_raw_ble.py
 To step through readback and command checks with per-step confirmation against
 Govee Home, run the verifier below. It powers the fan on before testing its
 mode and speed controls, then offers to restore the state it read at startup.
-Global oscillation still needs visual confirmation in Govee Home because its
-state has no reliable BLE readback.
+Global oscillation writes now receive a query/readback check as well as the
+operator's physical or app comparison.
 
 ```sh
 PYTHONPATH=src python examples/verify_h7102_ble.py

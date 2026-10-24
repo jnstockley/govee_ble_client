@@ -131,6 +131,9 @@ async def main() -> None:
                 elif notification.display_state is not None:
                     state = "on" if notification.display_state else "off"
                     decoded = f"display={state}"
+                elif notification.oscillation_state is not None:
+                    state = "on" if notification.oscillation_state else "off"
+                    decoded = f"oscillation={state}"
                 elif notification.mode_code is not None:
                     mode = notification.work_mode
                     decoded = (

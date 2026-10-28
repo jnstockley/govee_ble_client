@@ -34,7 +34,7 @@ jobs:
           check-latest: true
 
       - name: Step 3 - Install uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
 
       - name: Step 4 - Install External Linters
         run: |
@@ -61,7 +61,7 @@ jobs:
           check-latest: true
 
       - name: Step 3 - Install uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
 
       - name: Step 4 - Install Packages
         run: uv sync --frozen
@@ -93,7 +93,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
 
       - name: Install dependencies
         run: uv sync --frozen --python "${{ matrix.python-version }}"
@@ -121,7 +121,7 @@ jobs:
           check-latest: true
 
       - name: Step 3 - Install uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
 
       - name: Step 4 - Install Packages
         run: uv sync --frozen

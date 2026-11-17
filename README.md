@@ -10,8 +10,9 @@ Assistant custom integrations without requiring Home Assistant.
 pip install govee-ble-client
 ```
 
-Use Python **3.11–3.15**. The distribution is `govee-ble-client`; import
-`govee_ble_client`. Runtime dependencies are Bleak and cryptography. Adapter
+Requires Python **3.11+**; CI covers Python **3.11–3.15**. The distribution is
+`govee-ble-client`; import `govee_ble_client`. Runtime dependencies are
+`bleak>=0.20.0` and `cryptography>=43.0`, with no upper version caps. Adapter
 permissions and access come from the host operating system; installing this
 package does not configure Bluetooth or provision devices onto Wi-Fi.
 

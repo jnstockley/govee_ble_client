@@ -1,6 +1,6 @@
 version = 1
 revision = 5
-requires-python = ">=3.11, <3.16"
+requires-python = ">=3.11"
 
 [[package]]
 name = "bleak"
@@ -390,7 +390,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bleak", specifier = ">=3.0.2" },
+    { name = "bleak", specifier = ">=0.20.0" },
     { name = "cryptography", specifier = ">=43.0" },
 ]
 
@@ -798,6 +798,7 @@ dependencies = [
     { name = "winrt-windows-foundation" },
     { name = "winrt-windows-foundation-collections" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/71/1c/c64902c94efd142398198a3aeffa4311cdfffd9b1a40da16771ee5bff3e1/winrt_windows_storage_streams-4!10.0.28000.2705.tar.gz", hash = "sha256:9511b19e9cc588dcc81969b2871e465385f2ab37a62a9019f90dc37e03a5dd16", size = 16617, upload-time = "2026-10-24T01:47:12.013Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/63/69/58254ddbc0ef0e19095e98bfce1cf3df98cf5611098db9147cf428bcd1a8/winrt_windows_storage_streams-4!10.0.28000.2705-py3-none-any.whl", hash = "sha256:2824e516e328c9ba76ffc7926431255b124b4a9f52c656f0b1e0056a7f8ca7b8", size = 18790, upload-time = "2026-10-24T01:32:31.342Z" },
 ]

@@ -33,6 +33,28 @@ from collection and reports. Coverage checks require at least 95% for the
 library, including branches.
 Coverage artifacts contain local source paths and statistics, not BLE captures.
 
+## Dependency Compatibility
+
+Published requirements use minimum versions without speculative upper caps,
+following the [Python Packaging User Guide](https://packaging.python.org/en/latest/discussions/install-requires-vs-requirements/).
+The development lockfile is for contributors; it does not pin dependencies in
+apps that install the library.
+
+- Python 3.11 is required by `asyncio.timeout` and `typing.Self`. There is no
+  Python upper cap; the Python CI matrix records the versions exercised.
+- Bleak 0.20.0 added the optional client `services` filter used by this library.
+  Discovery's `return_adv` and advertisement RSSI were added in 0.19.0.
+  See the [Bleak changelog](https://bleak.readthedocs.io/en/latest/history.html).
+- Cryptography 43.0.0 added the
+  [`decrepit` ARC4 import](https://cryptography.io/en/latest/hazmat/decrepit/ciphers/)
+  used for the device's legacy encryption protocol.
+
+The dependency compatibility CI job installs the package in fresh Python 3.11
+environments with both runtime minimums pinned exactly, and separately with
+the latest resolvable dependencies. Both run library and example tests with
+branch coverage. These are offline API and protocol checks; backend and
+hardware behavior still depends on the host platform and dependency version.
+
 ## Bluetooth Is Blocked by Default
 
 `tests/conftest.py` installs a guard before test-module collection and restores

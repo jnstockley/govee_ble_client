@@ -3,14 +3,14 @@ name = "govee-ble-client"
 version = "0.1.0"
 description = "Async Bluetooth Low Energy discovery and protocol primitives for Govee devices"
 readme = "README.md"
-requires-python = ">=3.11, <3.16"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     { name = "Jack Stockley", email = "jack@jstockley.com"}
 ]
 dependencies = [
-    "bleak>=3.0.2",
+    "bleak>=0.20.0",
     "cryptography>=43.0",
 ]
 
